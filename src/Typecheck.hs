@@ -23,18 +23,16 @@ inferUniverse ctx term=do
 							ty<-inferType ctx term
 							case snd (normalize ctx ty) of
 									(Universe k)	-> Right k
-									(_)		-> Left (ExpectedUniverse term ty,fst term)
+									(_)		-> Left (ExpectedUniverse term ty,ctx,fst term)
 
 getFunctionType::(Context a)->(Expr a)->(Error a)->Either (Error a) (String,Expr a,Expr a)
 getFunctionType ctx ty err=case snd (normalize ctx ty) of
 				(Pi str t1 t2)	-> Right (str,t1,t2)
-				(Impl t1 t2)	-> Right ("x",t1,t2)
 				(_)		-> Left err
 
 getPairType::(Context a)->(Expr a)->(Error a)->Either (Error a) (String,Expr a,Expr a)
 getPairType ctx ty err=case snd (normalize ctx ty) of
 				(Sigma str t1 t2)-> Right (str,t1,t2)
-				(Conj t1 t2)	-> Right ("x",t1,t2)
 				(_)		-> Left err		
 
 							
@@ -45,7 +43,7 @@ inferType ctx (ann,expr)=
 			(BVar i)	->error("Attempted to infer type of bound variable (this should never happen)")
 			(FVar name)	->case Map.lookup name ctx of
 						Just (ty,_) -> Right ty
-						Nothing -> Left (UndeclaredIdentifier name,ann)
+						Nothing -> Left (UndeclaredIdentifier name,ctx,ann)
 			(Universe k)	->Right (ann,Universe (k+1))
 
 			(Pi str t1 t2)	->
@@ -54,13 +52,6 @@ inferType ctx (ann,expr)=
 							k1<-inferUniverse ctx t1
 							k2<-inferUniverse (Map.insert name (t1,Nothing) ctx) (open t2 name)
 							return (ann,Universe (max k1 k2))
-
-			(Impl t1 t2)	->
-					do
-						k1<-inferUniverse ctx t1
-						k2<-inferUniverse ctx t2
-						return (ann,Universe (max k1 k2))
-
 			(Lambda str t1 t2)-> 
 					let name=(freshName ctx str) in
 						do 
@@ -71,7 +62,7 @@ inferType ctx (ann,expr)=
 			(App t1 t2)	->
 					do
 						funTy<-inferType ctx t1
-						(t_str,t_dom,t_range)<-getFunctionType ctx funTy (ExpectedPiType funTy,ann)
+						(t_str,t_dom,t_range)<-getFunctionType ctx funTy (ExpectedPiType funTy,ctx,ann)
 						checkType ctx t2 t_dom
 						let name=freshName ctx t_str in
 							return (substitute (open t_range name) t2 name)
@@ -86,12 +77,12 @@ inferType ctx (ann,expr)=
 			(ProjL t1)	->
 						do
 							argTy<-inferType ctx t1
-							(str,left,right)<-getPairType ctx argTy (ExpectedSigmaType argTy,ann)
+							(str,left,right)<-getPairType ctx argTy (ExpectedSigmaType argTy,ctx,ann)
 							return left
 			(ProjR t1)	->
 						do
 							argTy<-inferType ctx t1
-							(str,left,right)<-getPairType ctx argTy (ExpectedSigmaType argTy,ann)
+							(str,left,right)<-getPairType ctx argTy (ExpectedSigmaType argTy,ctx,ann)
 							let name=freshName ctx str in
 								return (substitute (open right name) (ann,ProjL t1) name) --TODO annotation of ProjL is meaningless do it better
 			(Let str t1 t2 t3)->
@@ -110,8 +101,8 @@ checkType ctx expr ty=
 		case snd expr of
 			(BVar _) 	->error("Attempted to check type of bound variable - this should never happen")
 			(FVar name)	->case Map.lookup name ctx of
-						Just (ty2,_)	-> compareTypes ctx ty ty2 (TypeMismatch expr ty ty2,fst expr)
-						Nothing -> Left (UndeclaredIdentifier name,fst expr)
+						Just (ty2,_)	-> compareTypes ctx ty ty2 (TypeMismatch expr ty ty2,ctx,fst expr)
+						Nothing -> Left (UndeclaredIdentifier name,ctx,fst expr)
 
 
 --Universes are inferred
@@ -119,28 +110,28 @@ checkType ctx expr ty=
 --Implications are inferred
 			(Lambda str t1 t2)->do
 
-						(t_str,t_dom,t_range)<-getFunctionType ctx ty (ExpectedPiType ty,fst expr)
+						(t_str,t_dom,t_range)<-getFunctionType ctx ty (ExpectedPiType ty,ctx,fst expr)
 						let name=freshName ctx str in
 							do
-								compareTypes ctx t1 t_dom (TypeMismatch expr t_dom t1,fst t1)
+								compareTypes ctx t1 t_dom (TypeMismatch expr t_dom t1,ctx,fst t1)
 								checkType (Map.insert name (t1,Nothing) ctx) (open t2 name) (open t_range name)
 								return ()
 
 			(App t1 t2)	->
 						do
 							funTy<-inferType ctx t1
-							(t_str,t_dom,t_range)<-getFunctionType ctx funTy (ExpectedPiType ty,fst t1)
+							(t_str,t_dom,t_range)<-getFunctionType ctx funTy (ExpectedPiType ty,ctx,fst t1)
 							let name=freshName ctx t_str in
 								do
 									checkType ctx t2 t_dom
 									let resTy=(substitute (open t_range name) t2 name) in
-										compareTypes ctx ty resTy (TypeMismatch expr ty resTy,fst expr)
+										compareTypes ctx ty resTy (TypeMismatch expr ty resTy,ctx,fst expr)
 									return ()
 
 --Sigma types are inferred
 			(Pair t1 t2)	->
 						do
-							(t_str,t_left,t_right)<-getPairType ctx ty (ExpectedSigmaType ty,fst expr)
+							(t_str,t_left,t_right)<-getPairType ctx ty (ExpectedSigmaType ty,ctx,fst expr)
 							let name=freshName ctx t_str in
 								do
 									checkType ctx t1 t_left
@@ -157,6 +148,6 @@ checkType ctx expr ty=
 			term		->
 										do
 											actualType<-inferType ctx expr
-											compareTypes ctx actualType ty (TypeMismatch expr ty actualType,fst expr)
+											compareTypes ctx actualType ty (TypeMismatch expr ty actualType,ctx,fst expr)
 	
 

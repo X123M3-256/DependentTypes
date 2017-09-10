@@ -54,11 +54,20 @@ annotate=capturePos
 
 
 									
-reserved::String->Parser ()
+reserved::String->Parser String
 reserved w=try (do
 			string w
 			notFollowedBy (alphaNumChar<|>char '_')
-			sc)
+			sc
+			return w)
+
+operator::String->Parser String
+operator w=try (do
+			string w
+			notFollowedBy (char '*'<|>char '+'<|>char '='<|>char '>'<|>char '<')
+			sc
+			return w)
+
 			
 reservedWords::[String]
 reservedWords=["lambda","exists","forall","type","and","or","left","right","axiom","lemma","define","let","in"]
@@ -88,6 +97,10 @@ parseIdentifier=try (do
 						else
 							return name)
 
+parseOperator::Parser String
+parseOperator=operator "*"<|>operator "+"<|>reserved "and"<|>reserved "or"<|>operator "="<|>operator "=>"<|>operator "<=>"
+
+
 parseUniverse::Parser AnnExpr
 parseUniverse=annotate (do
 				string "type"
@@ -107,7 +120,7 @@ parseVariable=annotate (do
 
 parseAbstraction::Parser (String,AnnExpr,AnnExpr)
 parseAbstraction=do 
-			name<-parseIdentifier
+			name<-parseIdentifier<|>parseOperator
 			symbol ":"
 			ty<-parseExpr
 			symbol "."
@@ -126,10 +139,10 @@ parseBinder str c=annotate (do
 parseLet::Parser AnnExpr
 parseLet=annotate (do
 				reserved "let"
-				name<-parseIdentifier
+				name<-parseIdentifier<|>parseOperator
 				symbol ":"
 				ty<-parseExpr
-				symbol "="
+				symbol ":="
 				value<-parseExpr
 				reserved "in"
 				context<-get
@@ -175,25 +188,44 @@ parseUnaryOperators=do
 
 
 			
-parseBinaryOperator::String->(AnnExpr->AnnExpr->(ExprF SourceRegion))->Parser (AnnExpr->AnnExpr->AnnExpr)
-parseBinaryOperator sym con=
+parseApplication::Parser (AnnExpr->AnnExpr->AnnExpr)
+parseApplication=
 							do
-								symbol sym
+								symbol ""
 								return (\t1 t2->
-										let expr=con t1 t2 in
+										let expr=App t1 t2 in
 										let (s1,e1)=fst t1 in
 										let (s2,e2)=fst t2 in
 											((min s1 s2,max e1 e2),expr))																		
+parseBinaryOperator::(Parser a)->String->Parser (AnnExpr->AnnExpr->AnnExpr)
+parseBinaryOperator p name=
+							do
+								(ident_ann,_)<-capturePos p
+								context<-get
+								return (\t1 t2->
+										let ident=
+											(ident_ann,case List.elemIndex name context of
+												Just lvl -> BVar lvl
+												Nothing -> FVar name) in
+										let expr ann=(ann,App ident (ann,Pair t1 t2)) in
+										let (s1,e1)=fst t1 in
+										let (s2,e2)=fst t2 in
+											expr (min s1 s2,max e1 e2))	
+
 
 operatorTable::[[Operator Parser AnnExpr]]
 operatorTable=[
-				[InfixL (parseBinaryOperator "" App)],
 				[Prefix parseUnaryOperators],
-				[InfixL (parseBinaryOperator "and" Conj)],
-				[InfixR (parseBinaryOperator "=>" Impl)]
-			]
-			
+				[InfixL parseApplication],
+				[InfixL (parseBinaryOperator (operator "*") "*")],
+				[InfixL (parseBinaryOperator (operator "+") "+")],
+				[InfixN (parseBinaryOperator (operator "=") "=")],
+				[InfixL (parseBinaryOperator (reserved "and") "and")],
+				[InfixL (parseBinaryOperator (reserved "or") "or")],
+				[InfixR (parseBinaryOperator (operator "=>") "=>")],
+				[InfixN (parseBinaryOperator (operator "<=>") "<=>")]
 
+			]
 
 parseTerm::Parser AnnExpr
 parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression") 
@@ -204,7 +236,7 @@ parseExpr=(makeExprParser parseTerm operatorTable)<?>"expression"
 parseAxiom::Parser Definition
 parseAxiom=do
 		reserved "axiom"
-		str<-parseIdentifier
+		str<-parseIdentifier<|>parseOperator
 		symbol ":"
 		expr<-parseExpr
 		return (Axiom str expr)
@@ -212,10 +244,10 @@ parseAxiom=do
 parseLemma::Parser Definition
 parseLemma=do
 		(reserved "lemma"<|>reserved "define")
-		str<-parseIdentifier
+		str<-parseIdentifier<|>parseOperator
 		symbol ":"
 		ty<-parseExpr
-		symbol "="
+		symbol ":="
 		expr<-parseExpr
 		return (Lemma str ty expr)
 			

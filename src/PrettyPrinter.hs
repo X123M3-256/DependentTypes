@@ -6,23 +6,148 @@ import AbstractSyntax
 import Parser
 
 precedence::(ExprF a)->Int
-precedence (FVar str)=4
-precedence (BVar ind)=4
-precedence (Universe i)=4
-precedence (Pair t1 t2)=4
-precedence (App t1 t2)=3
-precedence (ProjL t1)=3
-precedence (ProjR t1)=3
-precedence (Conj t1 t2)=2
-precedence (Let _ _ _ _)=1
-precedence (Lambda _ _ _)=1
-precedence (Pi _ _ _)=1
-precedence (Sigma _ _ _)=1
-precedence (Impl t1 t2)=0
+precedence (FVar str)=10
+precedence (BVar ind)=10
+precedence (Universe i)=10
+precedence (Pair t1 t2)=10
+precedence (App t1 t2)=1
+precedence (ProjL t1)=1
+precedence (ProjR t1)=1
+precedence (Let _ _ _ _)=0
+precedence (Lambda _ _ _)=0
+precedence (Pi _ _ _)=0
+precedence (Sigma _ _ _)=0
+
+printOp::String->(Maybe String,Int,Associativity)->Context a->Expr a->Expr a->String
+printOp opName (ident,prec,assoc) ctx t1 t2=
+			let str=
+				case ident of
+					Just _	-> opName
+					Nothing -> " "++opName++" "
+			in
+				(printExpr ctx t1)++str++(printExpr ctx t2)
 
 
---TODO make sure names of free variables do not collide with bound variables
+getOperator::Expr a->Expr a->Maybe (String,Int,Associativity,Expr a,Expr a)
+getOperator t1 t2=case snd t1 of
+			FVar name->
+				case Map.lookup name operators of
+					Just (ident,prec,assoc)->
+								case snd t2 of
+									Pair left right	-> 
+											let str=
+												case ident of
+													Just str -> name
+													Nothing -> " "++name++" "
+											in
+												Just (str,prec,assoc,left,right)
+									_		-> error "Operator applied to only one argument; this shouldn't happen"
+					Nothing	-> Nothing
+			_	-> Nothing
 
+
+
+
+bracket::String->String
+bracket str="("++str++")"
+
+
+bracketOp::Bool->Int->Associativity->Context a->Expr a->String
+bracketOp left prec assoc ctx expr=let favouredSide=
+					case assoc of
+						AssocLeft	-> left
+						AssocRight	-> not left
+						AssocNone	-> False
+				in let str=printExpr ctx expr in
+						case snd expr of
+							FVar s		-> str
+							BVar _		-> error "Bound variable encountered"
+							Universe _	-> str
+							Pi _ _ _	-> bracket str
+							Lambda _ _ _	-> bracket str
+							App t1 t2 	-> case getOperator t1 t2 of
+										Just (op,opPrec,opAssoc,_,_)	->
+														if opPrec<prec then
+															bracket str
+														else if opPrec==prec then
+															if favouredSide then
+																str
+															else
+																bracket str
+														else
+															str
+										Nothing 			-> str
+							Sigma _ _ _	-> bracket str
+							Pair _ _	-> str
+							ProjL _		-> str
+							ProjR _ 	-> str
+							Let _ _ _ _	-> bracket str
+
+
+bracketApp::Bool->Context a->Expr a->String
+bracketApp left ctx expr=
+			let str=printExpr ctx expr in
+				case snd expr of
+					FVar s		-> str
+					BVar _		-> error "Bound variable encountered"
+					Universe _	-> str
+					Pi _ _ _	-> bracket str
+					Lambda _ _ _	-> bracket str
+					App t1 t2 	-> case getOperator t1 t2 of
+								Just (op,opPrec,opAssoc,_,_)	-> bracket str
+								Nothing 			->
+													if left then
+														str
+													else
+														bracket str
+					Sigma _ _ _	-> bracket str
+					Pair _ _	-> str
+					ProjL _		-> str
+					ProjR _		-> str
+					Let _ _ _ _	-> bracket str
+
+bracketProj::Context a->Expr a->String
+bracketProj ctx expr=
+			let str=printExpr ctx expr in
+				case snd expr of
+					FVar s		-> str
+					BVar _		-> error "Bound variable encountered"
+					Universe _	-> str
+					Pi _ _ _	-> bracket str
+					Lambda _ _ _	-> bracket str
+					App t1 t2 	-> bracket str
+					Sigma _ _ _	-> bracket str
+					Pair _ _	-> str
+					ProjL _		-> str
+					ProjR _		-> str
+					Let _ _ _ _	-> bracket str
+
+
+
+printExpr::(Context a)->(Expr a)->String
+printExpr ctx (ann,expr)=
+					case expr of
+						FVar s		-> s
+						BVar ind	-> error ("Attempted to print bound variable")
+						Universe i	-> if i==0 then "type" else "type"++(show i)
+						Pi str t1 t2	-> let name=freshName ctx str in
+									"forall "++name++":"++(printExpr ctx t1)++"."++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))
+						Lambda str t1 t2-> let name=freshName ctx str in
+									"lambda "++str++":"++(printExpr ctx t1)++"."++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))
+						App t1 t2	-> 
+									case getOperator t1 t2 of
+										Just (str,prec,assoc,left,right)->(bracketOp True prec assoc ctx left)++str++(bracketOp False prec assoc ctx right)
+										Nothing				->(bracketApp True ctx t1)++" "++(bracketApp False ctx t2)
+										
+						Sigma str t1 t2	-> let name=freshName ctx str in
+									"exists "++str++":"++(printExpr ctx t1)++"."++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))
+						Pair t1 t2	-> "("++(printExpr ctx t1)++","++(printExpr ctx t2)++")"
+						ProjL t1	-> "left "++(bracketProj ctx t1)
+						ProjR t1	-> "right "++(bracketProj ctx t1)
+						Let str t1 t2 t3-> let name=freshName ctx str in
+									"let "++str++":"++(printExpr ctx t1)++":="++(printExpr ctx t2)++" in "++(printExpr (Map.insert name (t1,Nothing) ctx) (open t3 name))
+
+{-
 printExpr::(Expr a)->String
 printExpr=let f context prec (_,term)=
 				let str=case term of
@@ -30,14 +155,13 @@ printExpr=let f context prec (_,term)=
 							BVar ind	-> context!!ind
 							Universe i	-> if i==0 then "type" else "type"++(show i)
 							Pi str t1 t2	-> "forall "++str++":"++(f context 0 t1)++"."++(f (str:context) 1 t2)
-							Impl t1 t2	-> ((f context 1 t1)++"=>"++(f context 0 t2))
 							Lambda str t1 t2-> "lambda "++str++":"++(f context 0 t1)++"."++(f (str:context) 1 t2)
 							App t1 t2	-> (f context 3 t1)++" "++(f context 4 t2)
 							Sigma str t1 t2	-> "exists "++str++":"++(f context 0 t1)++"."++(f (str:context) 1 t2)
-							Conj t1 t2	-> (f context 2 t1)++" and "++(f context 3 t2)
 							Pair t1 t2	-> "("++(f context 0 t1)++","++(f context 0 t2)++")"
 							ProjL t1	-> "left "++(f context 4 t1)
 							ProjR t1	-> "right "++(f context 4 t1)
+							Op str t1 t2	-> (f context  0 t1)++str++(f context  0 t2)
 							Let str t1 t2 t3-> "let "++str++":"++(f context 0 t1)++"="++(f context 0 t2)++" in "++(f (str:context) 1 t3)
 
 				in 
@@ -46,6 +170,6 @@ printExpr=let f context prec (_,term)=
 					else
 						str
 			in f ["B0"] 0
-
+-}
 --instance Show (Expr a) where
 --	show=printExpr
