@@ -36,7 +36,7 @@ typecheck (defn:defns) ctx=
 							
 main::IO()
 main=do
-		parseResult<-(parseFile "../test/naturalnumbers.txt")
+		parseResult<-(parseFile "../test/testnat.txt")
 		putStrLn (case parseResult of
 							Left err -> parseErrorPretty err
 							Right res -> case typecheck res prelude of

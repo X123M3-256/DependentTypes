@@ -38,14 +38,16 @@ data ExprF a=
 				BVar Int|
 				Universe Int|
 				Pi String (Expr a) (Expr a)| --Formation
-				Impl (Expr a) (Expr a)| --Non-dependent case (syntactic sugar)
 				Lambda String (Expr a) (Expr a)| --Introduction
 				App (Expr a) (Expr a)| --Elimination
 				Sigma String (Expr a) (Expr a)| --Formation
-				Conj (Expr a) (Expr a)| --Non-dependent case (syntactic sugar)
 				Pair (Expr a) (Expr a)| --Introduction
 				ProjL (Expr a)| --Elimination
 				ProjR (Expr a)|
+				Nat|
+				Z|
+				S (Expr a)|
+				Induct (Expr a) (Expr a) (Expr a) (Expr a)|
 				Let String (Expr a) (Expr a) (Expr a)
 	deriving Show
 
@@ -93,6 +95,10 @@ instance Eq (ExprF a) where
 	(Pair t1 u1) == (Pair t2 u2)=((snd t1)==(snd t2)) && ((snd u1)==(snd u2))
 	(ProjL t1)==(ProjL t2)= (snd t1)==(snd t2)
 	(ProjR t2)==(ProjR t1)= (snd t1)==(snd t2)
+	Nat==Nat=True
+	Z==Z=True
+	(S t1)==(S t2)= (snd t1)==(snd t2)
+	(Induct t1 u1 v1 w1)==(Induct t2 u2 v2 w2)=((snd t1)==(snd t2)) && ((snd u1)==(snd u2)) && ((snd v1)==(snd v2)) && ((snd w1)==(snd w2))
 	(Let str1 t1 u1 v1) == (Let str2 t2 u2 v2)=((snd t1)==(snd t2)) && ((snd u1)==(snd u2)) && ((snd v1)==(snd v2))
 	_ == _ = False
 	
@@ -143,6 +149,8 @@ node_map g e=
 					(Pair t1 t2)		->(ann,Pair (f i t1) (f i t2))
 					(ProjL t1)		->(ann,ProjL (f i t1))
 					(ProjR t1)		->(ann,ProjR (f i t1))
+					(S t1)			->(ann,S (f i t1))
+					(Induct t1 t2 t3 t4)	->(ann,Induct (f i t1) (f i t2) (f i t3) (f i t4))
 					(Let str t1 t2 t3)	->(ann,Let str (f i t1) (f i t2) (f (i+1) t3))
 					t1 			->g i (ann,t1)
 		in 
@@ -208,6 +216,14 @@ normalize ctx (ann,expr)=
 						case normalize ctx t1 of
 							(_,Pair left right)	-> normalize ctx right
 							nt1 			-> (ann,ProjR nt1) --TODO look into whether this case is needed
+			Nat 		->	(ann,Nat)
+			Z		->	(ann,Z)
+			(S t1)		->	(ann,S (normalize ctx t1))
+			(Induct t1 t2 t3 t4)->
+						case normalize ctx t4 of
+							(_,S n)	-> normalize ctx (ann,App (ann,App t3 n) (ann,Induct t1 t2 t3 n))
+							(_,Z)	-> normalize ctx t2
+							nt4 	-> (ann,Induct (normalize ctx t1) (normalize ctx t2) (normalize ctx t3) nt4)
 			(Let str t1 t2 t3)->let name=freshName ctx str in --TODO should we check type of argument? -- yes we should
 						normalize ctx (substitute (open t3 name) t2 name)
 

@@ -81,6 +81,10 @@ bracketOp left prec assoc ctx expr=let favouredSide=
 							Pair _ _	-> str
 							ProjL _		-> str
 							ProjR _ 	-> str
+							Nat 		-> str
+							Z		-> str
+							S _ 		-> str
+							Induct _ _ _ _	-> str
 							Let _ _ _ _	-> bracket str
 
 
@@ -104,10 +108,14 @@ bracketApp left ctx expr=
 					Pair _ _	-> str
 					ProjL _		-> str
 					ProjR _		-> str
+					Nat 		-> str
+					Z		-> str
+					S _ 		-> str
+					Induct _ _ _ _	-> str
 					Let _ _ _ _	-> bracket str
 
-bracketProj::Context a->Expr a->String
-bracketProj ctx expr=
+bracketUnary::Context a->Expr a->String
+bracketUnary ctx expr=
 			let str=printExpr ctx expr in
 				case snd expr of
 					FVar s		-> str
@@ -120,6 +128,30 @@ bracketProj ctx expr=
 					Pair _ _	-> str
 					ProjL _		-> str
 					ProjR _		-> str
+					Nat 		-> str
+					Z		-> str
+					S _ 		-> str
+					Induct _ _ _ _	-> str
+					Let _ _ _ _	-> bracket str
+
+bracketInduct::Context a->Expr a->String
+bracketInduct ctx expr=
+			let str=printExpr ctx expr in
+				case snd expr of
+					FVar s		-> str
+					BVar _		-> error "Bound variable encountered"
+					Universe _	-> str
+					Pi _ _ _	-> bracket str
+					Lambda _ _ _	-> bracket str
+					App t1 t2 	-> bracket str
+					Sigma _ _ _	-> bracket str
+					Pair _ _	-> str
+					ProjL _		-> bracket str
+					ProjR _		-> bracket str
+					Nat 		-> str
+					Z		-> str
+					S _ 		-> bracket str
+					Induct _ _ _ _	-> bracket str
 					Let _ _ _ _	-> bracket str
 
 
@@ -142,8 +174,13 @@ printExpr ctx (ann,expr)=
 						Sigma str t1 t2	-> let name=freshName ctx str in
 									"exists "++str++":"++(printExpr ctx t1)++"."++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))
 						Pair t1 t2	-> "("++(printExpr ctx t1)++","++(printExpr ctx t2)++")"
-						ProjL t1	-> "left "++(bracketProj ctx t1)
-						ProjR t1	-> "right "++(bracketProj ctx t1)
+						ProjL t1	-> "left "++(bracketUnary ctx t1)
+						ProjR t1	-> "right "++(bracketUnary ctx t1)
+						Nat 		-> "nat"
+						Z 		-> "0"
+						S t1 		-> "s "++(bracketUnary ctx t1)
+						Induct t1 t2 t3 t4-> "induction "++(bracketInduct ctx t1)++" "++(bracketInduct ctx t2)++" "++(bracketInduct ctx t3)++" "++(bracketInduct ctx t4)
+
 						Let str t1 t2 t3-> let name=freshName ctx str in
 									"let "++str++":"++(printExpr ctx t1)++":="++(printExpr ctx t2)++" in "++(printExpr (Map.insert name (t1,Nothing) ctx) (open t3 name))
 

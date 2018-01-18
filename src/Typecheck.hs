@@ -35,6 +35,12 @@ getPairType ctx ty err=case snd (normalize ctx ty) of
 				(Sigma str t1 t2)-> Right (str,t1,t2)
 				(_)		-> Left err		
 
+getUniverseType::(Context a)->(Expr a)->(Error a)->Either (Error a) Int
+getUniverseType ctx ty err=case snd (normalize ctx ty) of
+				Universe lvl	-> Right lvl
+				(_)		-> Left err		
+
+
 							
 									
 inferType::(Context a)->(Expr a)->Either (Error a) (Expr a)
@@ -85,6 +91,23 @@ inferType ctx (ann,expr)=
 							(str,left,right)<-getPairType ctx argTy (ExpectedSigmaType argTy,ctx,ann)
 							let name=freshName ctx str in
 								return (substitute (open right name) (ann,ProjL t1) name) --TODO annotation of ProjL is meaningless do it better
+			Nat 		->	return (ann,Universe 0)
+			Z		-> 	return (ann,Nat)
+			S t1 		->	do
+							checkType ctx t1 (ann,Nat)
+							return (ann,Nat)
+			(Induct t1 t2 t3 t4)->
+						do
+							--TODO all annotations are meaningless do them correctly
+							hypTy<-inferType ctx t1 --TODO check it is Pi type with domain nat and range universe something
+							(str,dom,range)<-getFunctionType ctx hypTy (ExpectedPiType hypTy,ctx,ann) --Check induction hypothesis is Pi type
+							compareTypes ctx (ann,Nat) dom (TypeMismatch (ann,expr) (ann,Nat) dom,ctx,ann) --Check that induction hypothesis has domain Nat
+							_<-getUniverseType ctx range (ExpectedUniverse t1 range,ctx,ann)--Check that induction hypothesis range is a universe	
+							checkType ctx t2 (ann,App t1 (ann,Z))
+							checkType ctx t3 (ann,Pi "n" (ann,Nat) (ann,Pi "ass" (ann,App t1 (ann,BVar 0)) (ann,App t1 (ann,S (ann,BVar 1)))))
+							checkType ctx t4 (ann,Nat)
+							return (ann,App t1 t4)
+
 			(Let str t1 t2 t3)->
 						let name=freshName ctx str in
 							do

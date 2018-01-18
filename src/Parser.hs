@@ -14,7 +14,6 @@ import qualified Text.Megaparsec.Char.Lexer as Lexer
 
 
 
-import Data.Fix
 import AbstractSyntax
 
 
@@ -70,7 +69,7 @@ operator w=try (do
 
 			
 reservedWords::[String]
-reservedWords=["lambda","exists","forall","type","and","or","left","right","axiom","lemma","define","let","in"]
+reservedWords=["lambda","exists","forall","type","and","or","left","right","axiom","lemma","define","let","in","s","nat","induction"]
 	
 isUniverseParser::(Parsec Void String ()) --Kinda hacky to repeat the parser here
 isUniverseParser=do
@@ -136,6 +135,25 @@ parseBinder str c=annotate (do
 				(str,t1,t2)<-parseAbstraction
 				return (c str t1 t2))
 
+parseNat::Parser AnnExpr
+parseNat=annotate (do
+			reserved "nat"
+			return Nat)
+
+parseZero::Parser AnnExpr
+parseZero=annotate (do
+			symbol "0"
+			return Z)
+
+parseInduction::Parser AnnExpr
+parseInduction=annotate (do
+				reserved "induction"
+				hyp<-parseTerm
+				base<-parseTerm
+				step<-parseTerm
+				num<-parseTerm
+				return (Induct hyp base step num))
+
 parseLet::Parser AnnExpr
 parseLet=annotate (do
 				reserved "let"
@@ -183,7 +201,7 @@ parseUnaryOperator sym con=do
 												((min s1 s2,max e1 e2),expr))											
 parseUnaryOperators::Parser (AnnExpr->AnnExpr)
 parseUnaryOperators=do
-						ops<-some ((parseUnaryOperator "left" ProjL) <|> (parseUnaryOperator "right" ProjR))
+						ops<-some ((parseUnaryOperator "left" ProjL) <|> (parseUnaryOperator "right" ProjR) <|> (parseUnaryOperator "s" S))
 						return (foldl1 (.) ops)
 
 
@@ -228,7 +246,7 @@ operatorTable=[
 			]
 
 parseTerm::Parser AnnExpr
-parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression") 
+parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>parseNat<|>parseZero<|>parseInduction<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression") 
 
 parseExpr=(makeExprParser parseTerm operatorTable)<?>"expression"
 
