@@ -8,7 +8,7 @@ import qualified Data.Map as Map
 
 
 import Text.Megaparsec
-import Text.Megaparsec.Expr
+import Control.Monad.Combinators.Expr
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as Lexer
 
@@ -39,13 +39,13 @@ symbol=Lexer.symbol sc
 
 capturePos::Parser a->Parser (SourceRegion,a)
 capturePos p=do
-				start<-getSourcePos
+				start<-getSourcePosition
 				expr<-p
-				end<-getSourcePos
+				end<-getSourcePosition
 				return ((start,end),expr)
-				where getSourcePos=
+				where getSourcePosition=
 									do	
-									sp<-getPosition
+									sp<-getSourcePos
 									return (AbstractSyntax.SourcePos (fromIntegral (unPos (sourceLine sp))) (fromIntegral (unPos (sourceColumn sp))))
 
 annotate::Parser (ExprF SourceRegion)-> Parser AnnExpr
@@ -273,7 +273,7 @@ parseProgram::Parser Program
 parseProgram=some (parseAxiom<|>parseLemma)
 
 
-parseFile::FilePath->IO (Either (ParseError Char Void) [Definition])
+parseFile::FilePath->IO (Either (ParseErrorBundle String Void) [Definition])
 parseFile path=do
 			source<-readFile path
 			return (parse (evalStateT parseProgram []) path source)
@@ -281,7 +281,7 @@ parseFile path=do
 --myParseTest p=parseTest (evalStateT p [])
 
 expr str=case (parse (evalStateT parseExpr []) "" str) of
-				Left err -> error (parseErrorPretty err)
+				Left err -> error (errorBundlePretty err)
 				Right res -> res
 
 	

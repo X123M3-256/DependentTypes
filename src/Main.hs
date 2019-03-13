@@ -38,7 +38,7 @@ main::IO()
 main=do
 		parseResult<-(parseFile "../test/testnat.txt")
 		putStrLn (case parseResult of
-							Left err -> parseErrorPretty err
+							Left err -> errorBundlePretty err
 							Right res -> case typecheck res prelude of
 									Left err -> printError err
 									Right ctx -> "It typechecks!")
