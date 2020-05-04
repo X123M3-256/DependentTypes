@@ -48,7 +48,9 @@ capturePos p=do
 									sp<-getSourcePos
 									return (AbstractSyntax.SourcePos (fromIntegral (unPos (sourceLine sp))) (fromIntegral (unPos (sourceColumn sp))))
 
-annotate::Parser (ExprF SourceRegion)-> Parser AnnExpr
+
+
+annotate::Parser a-> Parser (SourceRegion,a)
 annotate=capturePos
 
 
@@ -100,7 +102,7 @@ parseOperator::Parser String
 parseOperator=operator "*"<|>operator "+"<|>reserved "and"<|>reserved "or"<|>operator "="<|>operator "=>"<|>operator "<=>"
 
 
-parseUniverse::Parser AnnExpr
+parseUniverse::Parser Expr
 parseUniverse=annotate (do
 				string "type"
 				level<-many digitChar
@@ -108,105 +110,121 @@ parseUniverse=annotate (do
 				sc
 				return (if level=="" then Universe 0 else Universe (read level)))				
 					
-parseVariable::Parser AnnExpr
+parseVariable::Parser Expr
 parseVariable=annotate (do
 				name<-parseIdentifier
 				context<-get
 				case List.elemIndex name context of
 					Just lvl -> return (BVar lvl)
 					Nothing -> return (FVar name))
-
-
-parseAbstraction::Parser (String,AnnExpr,AnnExpr)
-parseAbstraction=do 
-			name<-parseIdentifier<|>parseOperator
-			symbol ":"
-			ty<-parseExpr
-			symbol "."
-			context<-get
-			put (name:context)
-			body<-parseExpr
-			put(context)
-			return (name,ty,body)	
-						
-parseBinder::String->(String->AnnExpr->AnnExpr->(ExprF SourceRegion))->Parser AnnExpr
-parseBinder str c=annotate (do
-				reserved str
-				(str,t1,t2)<-parseAbstraction
-				return (c str t1 t2))
-
-parseNat::Parser AnnExpr
+--
+--
+--parseAbstraction::Parser (String,AnnExpr,AnnExpr)
+--parseAbstraction=do 
+--			name<-parseIdentifier<|>parseOperator
+--			symbol ":"
+--			ty<-parseExpr
+--			symbol "."
+--			context<-get
+--			put (name:context)
+--			body<-parseExpr
+--			put(context)
+--			return (name,ty,body)	
+--						
+--parseBinder::String->(String->AnnExpr->AnnExpr->(ExprF SourceRegion))->Parser AnnExpr
+--parseBinder str c=annotate (do
+--				reserved str
+--				(str,t1,t2)<-parseAbstraction
+--				return (c str t1 t2))
+--
+parseNat::Parser Expr
 parseNat=annotate (do
-			reserved "nat"
-			return Nat)
+			num<- some digitChar
+			notFollowedBy (alphaNumChar<|>char '_')
+			return (NatLiteral (read num)))
+--
+--parseZero::Parser AnnExpr
+--parseZero=annotate (do
+--			symbol "0"
+--			return Z)
+--
+--parseInduction::Parser AnnExpr
+--parseInduction=annotate (do
+--				reserved "induction"
+--				hyp<-parseTerm
+--				base<-parseTerm
+--				step<-parseTerm
+--				num<-parseTerm
+--				return (Induct hyp base step num))
+--
 
-parseZero::Parser AnnExpr
-parseZero=annotate (do
-			symbol "0"
-			return Z)
+--parseLet::Parser Expr
+--parseLet=annotate (do
+		--		reserved "let"
+		--		binding<-parserBinding
+		--		symbol ":="
+		--		value<-parseExpr
+		--		reserved "in"
+		--		context<-get
+		--		put (name:context)
+		--		body<-parseExpr
+		--		put(context)
+		--		return (Let binding value body))
 
-parseInduction::Parser AnnExpr
-parseInduction=annotate (do
-				reserved "induction"
-				hyp<-parseTerm
-				base<-parseTerm
-				step<-parseTerm
-				num<-parseTerm
-				return (Induct hyp base step num))
 
-parseLet::Parser AnnExpr
-parseLet=annotate (do
-				reserved "let"
-				name<-parseIdentifier<|>parseOperator
+
+(n,lst):n
+
+
+parseBinding::Parser Binding
+parseBinding=
+	let pair=do
+					let (s1,e1)=fst b1 in
+					let (s2,e2)=fst b2 in
+						((min s1 s2,max e1 e2),BindingPair b1 b2)) in
+				foldr1 f elems
+				) in	
+	let parens=do
+		symbol "("
+		b<-parseBinding
+		symbol ")" 
+		return b in
+	let var=annotate(do
+		ident<-parseIdentifier
+		return (BindingVar ident)) in
+	do
+		binding<-var<|>parens
+		ty<-optional (do
 				symbol ":"
-				ty<-parseExpr
-				symbol ":="
-				value<-parseExpr
-				reserved "in"
-				context<-get
-				put (name:context)
-				body<-parseExpr
-				put(context)
-				return (Let name ty value body))
-
-
-
+				exp<-parseExpr
+				return exp)
+		return (case ty of
+				Just exp ->
+					let (s1,e1)=fst binding in
+					let (s2,e2)=fst exp in
+						((min s1 s2,max e1 e2),BindingAnnotation binding exp)
+				Nothing  -> binding)
 		
+			
+				
+     	
 
-parseParenthesis::Parser AnnExpr
+parseParenthesis::Parser Expr
 parseParenthesis=do
 					symbol "("
 					expr<-parseExpr
 					symbol ")"
 					return expr
 					
-parsePair::Parser AnnExpr
-parsePair=annotate (do
-				symbol "("
-				t1<-parseExpr
-				symbol ","
-				t2<-parseExpr
-				symbol ")"
-				return (Pair t1 t2))
-	
+parsePair::Parser (Expr->Expr->Expr)
+parsePair=do
+		symbol ","
+		return (\t1 t2->
+			let (s1,e1)=fst t1 in
+			let (s2,e2)=fst t2 in
+				((min s1 s2,max e1 e2),Pair t1 t2))
 
-
-
-parseUnaryOperator::String->(AnnExpr->(ExprF SourceRegion))->Parser (AnnExpr->AnnExpr)
-parseUnaryOperator sym con=do
-								((s1,e1),_)<-(capturePos (reserved sym))
-								return (\t1->
-											let expr=con t1 in
-											let (s2,e2)=fst t1 in
-												((min s1 s2,max e1 e2),expr))											
-parseUnaryOperators::Parser (AnnExpr->AnnExpr)
-parseUnaryOperators=do
-						ops<-some ((parseUnaryOperator "left" ProjL) <|> (parseUnaryOperator "right" ProjR) <|> (parseUnaryOperator "s" S))
-						return (foldl1 (.) ops)
-
-
-			
-parseApplication::Parser (AnnExpr->AnnExpr->AnnExpr)
+parseApplication::Parser (Expr->Expr->Expr)
 parseApplication=
 							do
 								symbol ""
@@ -215,7 +233,7 @@ parseApplication=
 										let (s1,e1)=fst t1 in
 										let (s2,e2)=fst t2 in
 											((min s1 s2,max e1 e2),expr))																		
-parseBinaryOperator::(Parser a)->String->Parser (AnnExpr->AnnExpr->AnnExpr)
+parseBinaryOperator::(Parser a)->String->Parser (Expr->Expr->Expr)
 parseBinaryOperator p name=
 							do
 								(ident_ann,_)<-capturePos p
@@ -231,12 +249,12 @@ parseBinaryOperator p name=
 											expr (min s1 s2,max e1 e2))	
 
 
-operatorTable::[[Operator Parser AnnExpr]]
+operatorTable::[[Operator Parser Expr]]
 operatorTable=[
-				[Prefix parseUnaryOperators],
 				[InfixL parseApplication],
 				[InfixL (parseBinaryOperator (operator "*") "*")],
 				[InfixL (parseBinaryOperator (operator "+") "+")],
+				[InfixR parsePair],
 				[InfixN (parseBinaryOperator (operator "=") "=")],
 				[InfixL (parseBinaryOperator (reserved "and") "and")],
 				[InfixL (parseBinaryOperator (reserved "or") "or")],
@@ -245,42 +263,43 @@ operatorTable=[
 
 			]
 
-parseTerm::Parser AnnExpr
-parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>parseNat<|>parseZero<|>parseInduction<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression") 
+parseTerm::Parser Expr
+parseTerm=parseUniverse<|>parseNat<|>parseVariable<|>parseParenthesis-- <|>(parseLet<?>"let binding")-- <|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression") 
 
 parseExpr=(makeExprParser parseTerm operatorTable)<?>"expression"
+--
+--
 
-
-parseAxiom::Parser Definition
-parseAxiom=do
-		reserved "axiom"
-		str<-parseIdentifier<|>parseOperator
-		symbol ":"
-		expr<-parseExpr
-		return (Axiom str expr)
-
-parseLemma::Parser Definition
-parseLemma=do
-		(reserved "lemma"<|>reserved "define")
-		str<-parseIdentifier<|>parseOperator
-		symbol ":"
-		ty<-parseExpr
-		symbol ":="
-		expr<-parseExpr
-		return (Lemma str ty expr)
-			
-parseProgram::Parser Program
-parseProgram=some (parseAxiom<|>parseLemma)
-
-
-parseFile::FilePath->IO (Either (ParseErrorBundle String Void) [Definition])
-parseFile path=do
-			source<-readFile path
-			return (parse (evalStateT parseProgram []) path source)
-
+--parseAxiom::Parser Definition
+--parseAxiom=do
+--		reserved "axiom"
+--		str<-parseIdentifier<|>parseOperator
+--		symbol ":"
+--		expr<-parseExpr
+--		return (Axiom str expr)
+--
+--parseLemma::Parser Definition
+--parseLemma=do
+--		(reserved "lemma"<|>reserved "define")
+--		str<-parseIdentifier<|>parseOperator
+--		symbol ":"
+--		ty<-parseExpr
+--		symbol ":="
+--		expr<-parseExpr
+--		return (Lemma str ty expr)
+--			
+--parseProgram::Parser Program
+--parseProgram=some (parseAxiom<|>parseLemma)
+--
+--
+--parseFile::FilePath->IO (Either (ParseErrorBundle String Void) [Definition])
+--parseFile path=do
+--			source<-readFile path
+--			return (parse (evalStateT parseProgram []) path source)
+--
 --myParseTest p=parseTest (evalStateT p [])
 
-expr str=case (parse (evalStateT parseExpr []) "" str) of
+expr str=case (parse (evalStateT parseBinding []) "" str) of
 				Left err -> error (errorBundlePretty err)
 				Right res -> res
 

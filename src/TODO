@@ -1,0 +1,4 @@
+* Implement implicit arguments
+* Fix infinite loop in type normalization
+* Improved syntax
+* Better evaluation

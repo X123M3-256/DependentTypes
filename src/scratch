@@ -1,0 +1,8 @@
+
+
+
+
+test=forall x:nat.forall y:nat.P(x)=>P(y)=>Q(x,y)
+
+
+
