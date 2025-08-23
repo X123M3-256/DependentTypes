@@ -5,7 +5,7 @@ import AbstractSyntax
 import Parser
 import PrettyPrinter
 import Error
-
+import Debug.Trace
 
 
 compareTypes::(Context a)->(Expr a)->(Expr a)->(Error a)->Either (Error a) ()
@@ -26,17 +26,17 @@ inferUniverse ctx term=do
 									(_)		-> Left (ExpectedUniverse term ty,ctx,fst term)
 
 getFunctionType::(Context a)->(Expr a)->(Error a)->Either (Error a) (String,Expr a,Expr a)
-getFunctionType ctx ty err=case snd (normalize ctx ty) of
+getFunctionType ctx ty err=case snd (normalizePartial ctx ty) of
 				(Pi str t1 t2)	-> Right (str,t1,t2)
 				(_)		-> Left err
 
 getPairType::(Context a)->(Expr a)->(Error a)->Either (Error a) (String,Expr a,Expr a)
-getPairType ctx ty err=case snd (normalize ctx ty) of
+getPairType ctx ty err=case snd (normalizePartial ctx ty) of
 				(Sigma str t1 t2)-> Right (str,t1,t2)
 				(_)		-> Left err		
 
 getUniverseType::(Context a)->(Expr a)->(Error a)->Either (Error a) Int
-getUniverseType ctx ty err=case snd (normalize ctx ty) of
+getUniverseType ctx ty err=case snd (normalizePartial ctx ty) of
 				Universe lvl	-> Right lvl
 				(_)		-> Left err		
 
@@ -121,6 +121,7 @@ inferType ctx (ann,expr)=
 								
 checkType::(Context a)->(Expr a)->(Expr a)->Either (Error a) ()
 checkType ctx expr ty=
+--		trace ("Expr: "++(printExpr ctx expr)++" Expected type: "++(printExpr ctx ty)) (
 		case snd expr of
 			(BVar _) 	->error("Attempted to check type of bound variable - this should never happen")
 			(FVar name)	->case Map.lookup name ctx of
@@ -171,6 +172,5 @@ checkType ctx expr ty=
 			term		->
 										do
 											actualType<-inferType ctx expr
-											compareTypes ctx actualType ty (TypeMismatch expr ty actualType,ctx,fst expr)
-	
-
+											compareTypes ctx actualType ty (TypeMismatch expr ty actualType,ctx,fst expr)	
+	--		)

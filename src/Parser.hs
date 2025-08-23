@@ -97,7 +97,7 @@ parseIdentifier=try (do
 							return name)
 
 parseOperator::Parser String
-parseOperator=operator "*"<|>operator "+"<|>reserved "and"<|>reserved "or"<|>operator "="<|>operator "=>"<|>operator "<=>"
+parseOperator=operator "*"<|>operator "+"<|>reserved "and"<|>reserved "or"<|>operator "="<|>operator ">="<|>operator "<="<|>operator ">"<|>operator "<"<|>operator "=>"<|>operator "<=>"
 
 
 parseUniverse::Parser AnnExpr
@@ -238,6 +238,11 @@ operatorTable=[
 				[InfixL (parseBinaryOperator (operator "*") "*")],
 				[InfixL (parseBinaryOperator (operator "+") "+")],
 				[InfixN (parseBinaryOperator (operator "=") "=")],
+				[InfixN (parseBinaryOperator (operator ">") ">")],
+				[InfixN (parseBinaryOperator (operator "<") "<")],
+				[InfixN (parseBinaryOperator (operator ">=") ">=")],
+				[InfixN (parseBinaryOperator (operator "<=") "<=")],
+
 				[InfixL (parseBinaryOperator (reserved "and") "and")],
 				[InfixL (parseBinaryOperator (reserved "or") "or")],
 				[InfixR (parseBinaryOperator (operator "=>") "=>")],

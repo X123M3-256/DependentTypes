@@ -3,7 +3,7 @@ module AbstractSyntax where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-
+import Debug.Trace
 
 data SourcePos=SourcePos Int Int
 	deriving (Show,Eq)
@@ -106,7 +106,7 @@ instance Eq (ExprF a) where
 data Associativity=AssocLeft|AssocRight|AssocNone	
 
 operators::Map.Map String (Maybe String,Int,Associativity)
-operators=Map.fromList [("*",(Just "mult",5,AssocLeft)),("+",(Just "add",4,AssocLeft)),("=",(Just "eq",3,AssocNone)),("and",(Nothing,2,AssocLeft)),("or",(Nothing,1,AssocLeft)),("=>",(Just "impl",0,AssocRight)),("<=>",(Just "equiv",0,AssocNone))]
+operators=Map.fromList [("*",(Just "mult",9,AssocLeft)),("+",(Just "add",8,AssocLeft)),("=",(Just "eq",7,AssocNone)),(">",(Just "gt",6,AssocNone)),("<",(Just "lt",5,AssocNone)),(">=",(Just "gte",4,AssocNone)),("<=",(Just "lte",3,AssocNone)),("and",(Nothing,2,AssocLeft)),("or",(Nothing,1,AssocLeft)),("=>",(Just "impl",0,AssocRight)),("<=>",(Just "equiv",0,AssocNone))]
 
 
 
@@ -227,10 +227,81 @@ normalize ctx (ann,expr)=
 			(Let str t1 t2 t3)->let name=freshName ctx str in --TODO should we check type of argument? -- yes we should
 						normalize ctx (substitute (open t3 name) t2 name)
 
+--Normalize only far enough to determine top level node
+normalizePartial::Context a->Expr a->Expr a
+normalizePartial ctx (ann,expr)=
+		case expr of
+			(BVar i)	->error "Bound variable in normalize; this should never happen"
+			(FVar name)	->
+						case Map.lookup name ctx of
+							Just (ty,Just def)	-> normalizePartial ctx def
+							_			-> (ann,FVar name) --TODO look into whether this case is needed
+			(App t1 t2)	->
+						case normalizePartial ctx t1 of
+							(_,Lambda str _ body)	-> 
+											let name=freshName ctx str in --TODO should we check type of argument? -- yes we should
+												(normalizePartial ctx (substitute (open body name) t2 name))
+							nt1 			->	(ann,App nt1 (normalizePartial ctx t2)) --TODO look into whether this case is needed
+			(ProjL t1)	->
+						case normalizePartial ctx t1 of
+							(_,Pair left right)	-> normalizePartial ctx left
+							nt1 			-> (ann,ProjL nt1) --TODO look into whether this case is needed
+
+			(ProjR t1)	->
+						case normalizePartial ctx t1 of
+							(_,Pair left right)	-> normalizePartial ctx right
+							nt1 			-> (ann,ProjR nt1) --TODO look into whether this case is needed
+			(Induct t1 t2 t3 t4)->
+						case normalizePartial ctx t4 of
+							(_,S n)	-> normalizePartial ctx (ann,App (ann,App t3 n) (ann,Induct t1 t2 t3 n))
+							(_,Z)	-> normalizePartial ctx t2
+							nt4 	-> (ann,Induct (normalizePartial ctx t1) (normalizePartial ctx t2) (normalizePartial ctx t3) nt4)
+			(Let str t1 t2 t3)->let name=freshName ctx str in --TODO should we check type of argument? -- yes we should
+						normalizePartial ctx (substitute (open t3 name) t2 name)
+			(_)		-> (ann,expr)
+
+--Unlike normalize or normalizePartial, will never expand variable names; only simplifies redundant expressions like left (x,y)->x or (lambda x:x)y 
 
 
+simplifyAbstraction::(Context a)->(String,Expr a,Expr a)->(String,Expr a,Expr a)
+simplifyAbstraction ctx (str,t1,t2)=	
+					let name=freshName ctx str in
+						(str,simplify ctx t1,close (simplify (Map.insert name (t1,Nothing) ctx) (open t2 name)) name)
 
+simplify::Context a->Expr a->Expr a
+simplify ctx (ann,expr)=
+		case expr of
+			(Pi str t1 t2)	->let (nstr,nt1,nt2)=simplifyAbstraction ctx (str,t1,t2) in (ann,Pi nstr nt1 nt2)
+			(Lambda str t1 t2)->let (nstr,nt1,nt2)=simplifyAbstraction ctx (str,t1,t2) in (ann,Lambda nstr nt1 nt2)
+			(App t1 t2)	->
+						case t1 of
+							(_,Lambda str _ body)	-> 
+											let name=freshName ctx str in --TODO should we check type of argument? -- yes we should
+												simplify ctx (substitute (open body name) t2 name)
+							nt1 			-> (ann,App nt1 (simplify ctx t2)) --TODO look into whether this case is needed
+			(Sigma str t1 t2)->let (nstr,nt1,nt2)=simplifyAbstraction ctx (str,t1,t2) in (ann,Sigma nstr nt1 nt2)
+			(Pair t1 t2)	->(ann,Pair (simplify ctx t1) (simplify ctx t2))
+			(ProjL t1)	->
+						case t1 of
+							(_,Pair left right)	-> simplify ctx left
+							nt1 			-> (ann,ProjL nt1) --TODO look into whether this case is needed
+
+			(ProjR t1)	->
+						case t1 of
+							(_,Pair left right)	-> simplify ctx right
+							nt1 			-> (ann,ProjR nt1) --TODO look into whether this case is needed
+			(S t1)		->	(ann,S (simplify ctx t1))
+			(Induct t1 t2 t3 t4)->
+						case simplify ctx t4 of
+							(_,S n)	-> simplify ctx (ann,App (ann,App t3 n) (ann,Induct t1 t2 t3 n))
+							(_,Z)	-> simplify ctx t2
+							nt4 	-> (ann,Induct (simplify ctx t1) (simplify ctx t2) (simplify ctx t3) nt4)
+			(Let str t1 t2 t3)->let name=freshName ctx str in --TODO should we check type of argument? -- yes we should
+						simplify ctx (substitute (open t3 name) t2 name)
+			(_)		-> (ann,expr)
 			
+
+
 --Get list of free variables
 --freeVariables::Expr->Set.Set String
 --freeVariables Expr=let 
