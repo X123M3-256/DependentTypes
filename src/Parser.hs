@@ -275,7 +275,7 @@ parseLemma=do
 		return (Lemma str ty expr)
 			
 parseProgram::Parser Program
-parseProgram=some (parseAxiom<|>parseLemma)
+parseProgram=some (parseAxiom<|>parseLemma) <* eof
 
 
 parseFile::FilePath->IO (Either (ParseErrorBundle String Void) [Definition])
