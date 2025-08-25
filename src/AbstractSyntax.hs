@@ -21,7 +21,7 @@ type SourceRegion=(SourcePos,SourcePos)
 				
 --Abstract syntax
 
-type Program=[Definition]
+type Program=([(SourceRegion,String)],[Definition])
 
 data Definition=
 				Axiom String AnnExpr|

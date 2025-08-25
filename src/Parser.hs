@@ -2,6 +2,7 @@ module Parser  where
 
 import Control.Monad (void)
 import Control.Monad.State
+import qualified Control.Exception as Exception
 import Data.Void
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -69,7 +70,7 @@ operator w=try (do
 
 			
 reservedWords::[String]
-reservedWords=["lambda","exists","forall","type","and","or","fst","snd","left","right","axiom","lemma","define","let","in","s","nat","induction","exhaust","case","with"]
+reservedWords=["lambda","exists","forall","type","and","or","fst","snd","left","right","axiom","lemma","define","let","in","s","nat","induction","exhaust","case","with","import"]
 	
 isUniverseParser::(Parsec Void String ()) --Kinda hacky to repeat the parser here
 isUniverseParser=do
@@ -292,15 +293,31 @@ parseLemma=do
 		symbol ":="
 		expr<-parseExpr
 		return (Lemma str ty expr)
+
+
+parseImport::Parser (SourceRegion,String)
+parseImport=capturePos (do
+		reserved "import"
+		str<-many (alphaNumChar<|>char '_'<|>char '.'<|>char '/')
+		sc
+		return str)
 			
 parseProgram::Parser Program
-parseProgram=some (parseAxiom<|>parseLemma) <* eof
+parseProgram=do
+		sc
+		imports<-many parseImport
+		defs<-some (parseAxiom<|>parseLemma) <* eof
+		return (imports,defs)
 
 
-parseFile::FilePath->IO (Either (ParseErrorBundle String Void) [Definition])
-parseFile path=do
-			source<-readFile path
-			return (parse (evalStateT parseProgram []) path source)
+parseString::String->(Either (ParseErrorBundle String Void) Program)
+parseString str=parse (evalStateT parseProgram []) "" str
+--parseFile::FilePath->IO (Either (ParseErrorBundle String Void) Program)
+--parseFile path=do
+--			except<-Exception.try (readFile path)
+--			case except of
+--				Left exp -> return (exp)
+--				Right source -> return (parse (evalStateT parseProgram []) path source)
 
 --myParseTest p=parseTest (evalStateT p [])
 
