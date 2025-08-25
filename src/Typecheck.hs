@@ -35,6 +35,13 @@ getPairType ctx ty err=case snd (normalizePartial ctx ty) of
 				(Sigma str t1 t2)-> Right (str,t1,t2)
 				(_)		-> Left err		
 
+
+getSumType::(Context a)->(Expr a)->(Error a)->Either (Error a) (Expr a,Expr a)
+getSumType ctx ty err=case snd (normalizePartial ctx ty) of
+				(Sum t1 t2)-> Right (t1,t2)
+				(_)		-> Left err		
+
+
 getUniverseType::(Context a)->(Expr a)->(Error a)->Either (Error a) Int
 getUniverseType ctx ty err=case snd (normalizePartial ctx ty) of
 				Universe lvl	-> Right lvl
@@ -91,6 +98,14 @@ inferType ctx (ann,expr)=
 							(str,left,right)<-getPairType ctx argTy (ExpectedSigmaType argTy,ctx,ann)
 							let name=freshName ctx str in
 								return (substitute (open right name) (ann,ProjL t1) name) --TODO annotation of ProjL is meaningless do it better
+			(Sum t1 t2)	->
+						do
+							k1<-inferUniverse ctx t1
+							k2<-inferUniverse ctx t2
+							return (ann,Universe (max k1 k2))
+			(DisjL t1)	->error("Cannot infer type of disjunction constructor; (type annotation required but we hope this case is never hit)")
+			(DisjR t1)	->error("Cannot infer type of disjunction constructor; (type annotation required but we hope this case is never hit)")
+			(Exhaust t1 t2 t3)->error("Inference for exhaust not implemented yet TODO")
 			Nat 		->	return (ann,Universe 0)
 			Z		-> 	return (ann,Nat)
 			S t1 		->	do
@@ -121,7 +136,7 @@ inferType ctx (ann,expr)=
 								
 checkType::(Context a)->(Expr a)->(Expr a)->Either (Error a) ()
 checkType ctx expr ty=
---		trace ("Expr: "++(printExpr ctx expr)++" Expected type: "++(printExpr ctx ty)) (
+		--trace ("Expr: "++(printExpr ctx expr)++" Expected type: "++(printExpr ctx (simplify ctx ty))) (
 		case snd expr of
 			(BVar _) 	->error("Attempted to check type of bound variable - this should never happen")
 			(FVar name)	->case Map.lookup name ctx of
@@ -161,16 +176,37 @@ checkType ctx expr ty=
 									checkType ctx t1 t_left
 									checkType ctx t2 (substitute (open t_right name) t1 name)
 									return ()
+--Left projection is inferred
+--Right projection is inferred
 			(Let str t1 t2 t3)->
 						let name=freshName ctx str in
 							do
 								checkType ctx t2 t1
 								checkType (Map.insert name (t1,Just t2) ctx) (open t3 name) ty
 								return ()
---Left projection is inferred
---Right projection is inferred
+--Sum types are inferred
+			(DisjL t1)	->
+						do
+							(t_left,t_right)<-getSumType ctx ty (ExpectedSumType ty,ctx,fst expr)
+							checkType ctx t1 t_left
+							return ()
+			(DisjR t1)	->
+						do
+							(t_left,t_right)<-getSumType ctx ty (ExpectedSumType ty,ctx,fst expr)
+							checkType ctx t1 t_right
+							return ()
+			(Exhaust t0 (_,(Lambda str t1 t2)) (_,(Lambda _ t3 t4)))->
+						let name=freshName ctx str in
+							do
+								--Check type of disjunction argument
+								checkType ctx t0 (fst expr,(Sum t1 t3))
+								--Check both branches have the correct type
+								checkType (Map.insert name (t1,Nothing) ctx) (open t2 name) ty
+								checkType (Map.insert name (t3,Nothing) ctx) (open t4 name) ty
+								return ()
+			(Exhaust t0 _ _)-> error "Encountered exhaust without lambdas as arguments (this should not happen)"
 			term		->
-										do
-											actualType<-inferType ctx expr
-											compareTypes ctx actualType ty (TypeMismatch expr ty actualType,ctx,fst expr)	
-	--		)
+						do
+							actualType<-inferType ctx expr
+							compareTypes ctx actualType ty (TypeMismatch expr ty actualType,ctx,fst expr)	
+--			)

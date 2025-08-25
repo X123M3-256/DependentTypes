@@ -44,6 +44,10 @@ data ExprF a=
 				Pair (Expr a) (Expr a)| --Introduction
 				ProjL (Expr a)| --Elimination
 				ProjR (Expr a)|
+				Sum (Expr a) (Expr a)| --Formation
+				DisjL (Expr a)| --Introduction
+				DisjR (Expr a)| --Introduction
+				Exhaust (Expr a) (Expr a) (Expr a)| --Elimination
 				Nat|
 				Z|
 				S (Expr a)|
@@ -61,6 +65,10 @@ bareSigma str t1 t2=((),Sigma str t1 t2)
 barePair t1 t2=((),Pair t1 t2)
 bareProjL t1=((),ProjL t1)
 bareProjR t1=((),ProjR t1)
+bareSum t1 t2=((),Sum t1 t2)
+bareDisjL t1=((),ProjL t1)
+bareDisjR t1=((),ProjR t1)
+bareExhaust t1 t2 t3=((),ProjR t1)
 bareLet str t1 t2 t3=((),Let str t1 t2 t3)
 
 
@@ -76,7 +84,11 @@ stripAnnotation (_,expr)=case expr of
 					(Pair t1 t2)		->barePair (stripAnnotation t1) (stripAnnotation t2)
 					(ProjL t1)		->bareProjL (stripAnnotation t1)
 					(ProjR t1)		->bareProjR (stripAnnotation t1)
-					(Let str t1 t2 t3)		->bareLet str (stripAnnotation t1) (stripAnnotation t2) (stripAnnotation t3)
+					(Sum t1 t2)		->bareSum (stripAnnotation t1) (stripAnnotation t2)
+					(DisjL t1)		->bareDisjL (stripAnnotation t1)
+					(DisjR t1)		->bareDisjR (stripAnnotation t1)
+					(Exhaust t1 t2 t3)	->bareExhaust (stripAnnotation t1) (stripAnnotation t2) (stripAnnotation t3)
+					(Let str t1 t2 t3)	->bareLet str (stripAnnotation t1) (stripAnnotation t2) (stripAnnotation t3)
 
 
 			
@@ -95,6 +107,10 @@ instance Eq (ExprF a) where
 	(Pair t1 u1) == (Pair t2 u2)=((snd t1)==(snd t2)) && ((snd u1)==(snd u2))
 	(ProjL t1)==(ProjL t2)= (snd t1)==(snd t2)
 	(ProjR t2)==(ProjR t1)= (snd t1)==(snd t2)
+	(Sum t1 u1) == (Sum t2 u2)=((snd t1)==(snd t2)) && ((snd u1)==(snd u2))
+	(DisjL t1)==(DisjL t2)= (snd t1)==(snd t2)
+	(DisjR t2)==(DisjR t1)= (snd t1)==(snd t2)
+	(Exhaust t1 u1 v1) == (Exhaust t2 u2 v2)=((snd t1)==(snd t2)) && ((snd u1)==(snd u2)) && ((snd v1)==(snd v2))
 	Nat==Nat=True
 	Z==Z=True
 	(S t1)==(S t2)= (snd t1)==(snd t2)
@@ -106,7 +122,7 @@ instance Eq (ExprF a) where
 data Associativity=AssocLeft|AssocRight|AssocNone	
 
 operators::Map.Map String (Maybe String,Int,Associativity)
-operators=Map.fromList [("*",(Just "mult",9,AssocLeft)),("+",(Just "add",8,AssocLeft)),("=",(Just "eq",7,AssocNone)),(">",(Just "gt",6,AssocNone)),("<",(Just "lt",5,AssocNone)),(">=",(Just "gte",4,AssocNone)),("<=",(Just "lte",3,AssocNone)),("and",(Nothing,2,AssocLeft)),("or",(Nothing,1,AssocLeft)),("=>",(Just "impl",0,AssocRight)),("<=>",(Just "equiv",0,AssocNone))]
+operators=Map.fromList [("*",(Just "mult",9,AssocLeft)),("+",(Just "add",8,AssocLeft)),("=",(Just "eq",7,AssocNone)),(">",(Just "gt",6,AssocNone)),("<",(Just "lt",5,AssocNone)),(">=",(Just "gte",4,AssocNone)),("<=",(Just "lte",3,AssocNone)),("and",(Nothing,2,AssocLeft)),("=>",(Just "impl",0,AssocRight)),("<=>",(Just "equiv",0,AssocNone))]
 
 
 
@@ -149,6 +165,10 @@ node_map g e=
 					(Pair t1 t2)		->(ann,Pair (f i t1) (f i t2))
 					(ProjL t1)		->(ann,ProjL (f i t1))
 					(ProjR t1)		->(ann,ProjR (f i t1))
+					(Sum t1 t2)		->(ann,Sum (f i t1) (f i t2))
+					(DisjL t1)		->(ann,DisjL (f i t1))
+					(DisjR t1)		->(ann,DisjR (f i t1))
+					(Exhaust t1 t2 t3)	->(ann,Exhaust (f i t1) (f i t2) (f i t3))
 					(S t1)			->(ann,S (f i t1))
 					(Induct t1 t2 t3 t4)	->(ann,Induct (f i t1) (f i t2) (f i t3) (f i t4))
 					(Let str t1 t2 t3)	->(ann,Let str (f i t1) (f i t2) (f (i+1) t3))
@@ -216,6 +236,14 @@ normalize ctx (ann,expr)=
 						case normalize ctx t1 of
 							(_,Pair left right)	-> normalize ctx right
 							nt1 			-> (ann,ProjR nt1) --TODO look into whether this case is needed
+			(Sum t1 t2)	->(ann,Sum (normalize ctx t1) (normalize ctx t2))
+			(DisjL t1)	->	(ann,DisjL (normalize ctx t1))
+			(DisjR t1)	->	(ann,DisjR (normalize ctx t1))
+			(Exhaust t1 t2 t3)->	
+						case normalize ctx t1 of
+							(_,DisjL expr)	-> normalize ctx (ann,App t2 expr)--TODO check types
+							(_,DisjR expr)	-> normalize ctx (ann,App t3 expr)
+							nt1 		-> (ann,Exhaust (normalize ctx t1) (normalize ctx t2) (normalize ctx t3))
 			Nat 		->	(ann,Nat)
 			Z		->	(ann,Z)
 			(S t1)		->	(ann,S (normalize ctx t1))
@@ -255,13 +283,12 @@ normalizePartial ctx (ann,expr)=
 						case normalizePartial ctx t4 of
 							(_,S n)	-> normalizePartial ctx (ann,App (ann,App t3 n) (ann,Induct t1 t2 t3 n))
 							(_,Z)	-> normalizePartial ctx t2
-							nt4 	-> (ann,Induct (normalizePartial ctx t1) (normalizePartial ctx t2) (normalizePartial ctx t3) nt4)
+							nt4 	-> (ann,Induct t1 t2 t3 t4)
 			(Let str t1 t2 t3)->let name=freshName ctx str in --TODO should we check type of argument? -- yes we should
 						normalizePartial ctx (substitute (open t3 name) t2 name)
 			(_)		-> (ann,expr)
 
 --Unlike normalize or normalizePartial, will never expand variable names; only simplifies redundant expressions like left (x,y)->x or (lambda x:x)y 
-
 
 simplifyAbstraction::(Context a)->(String,Expr a,Expr a)->(String,Expr a,Expr a)
 simplifyAbstraction ctx (str,t1,t2)=	

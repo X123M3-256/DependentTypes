@@ -81,6 +81,19 @@ bracketOp left prec assoc ctx expr=let favouredSide=
 							Pair _ _	-> str
 							ProjL _		-> str
 							ProjR _ 	-> str
+							Sum _ _		-> 
+										if 1<prec then
+											bracket str
+										else if 1==prec then
+											if favouredSide then
+												str
+											else
+												bracket str
+										else
+											str
+							DisjL _		-> str
+							DisjR _		-> str
+							Exhaust _ _ _	-> bracket str
 							Nat 		-> str
 							Z		-> str
 							S _ 		-> str
@@ -93,7 +106,7 @@ bracketApp left ctx expr=
 			let str=printExpr ctx expr in
 				case snd expr of
 					FVar s		-> str
-					BVar _		-> error "Bound variable encountered"
+					BVar _		-> "blah" --error "Bound variable encountered"
 					Universe _	-> str
 					Pi _ _ _	-> bracket str
 					Lambda _ _ _	-> bracket str
@@ -108,6 +121,10 @@ bracketApp left ctx expr=
 					Pair _ _	-> str
 					ProjL _		-> str
 					ProjR _		-> str
+					Sum _ _		-> bracket str
+					DisjL _		-> str
+					DisjR _		-> str
+					Exhaust _ _ _	-> bracket str
 					Nat 		-> str
 					Z		-> str
 					S _ 		-> str
@@ -128,6 +145,10 @@ bracketUnary ctx expr=
 					Pair _ _	-> str
 					ProjL _		-> str
 					ProjR _		-> str
+					Sum _ _		-> bracket str
+					DisjL _		-> str
+					DisjR _		-> str
+					Exhaust _ _ _	-> bracket str
 					Nat 		-> str
 					Z		-> str
 					S _ 		-> str
@@ -148,6 +169,10 @@ bracketInduct ctx expr=
 					Pair _ _	-> str
 					ProjL _		-> bracket str
 					ProjR _		-> bracket str
+					Sum _ _		-> bracket str
+					DisjL _		-> bracket str
+					DisjR _		-> bracket str
+					Exhaust _ _ _	-> bracket str
 					Nat 		-> str
 					Z		-> str
 					S _ 		-> bracket str
@@ -160,7 +185,7 @@ printExpr::(Context a)->(Expr a)->String
 printExpr ctx (ann,expr)=
 					case expr of
 						FVar s		-> s
-						BVar ind	-> error ("Attempted to print bound variable")
+						BVar ind	-> "blah2" --error ("Attempted to print bound variable")
 						Universe i	-> if i==0 then "type" else "type"++(show i)
 						Pi str t1 t2	-> let name=freshName ctx str in
 									"forall "++name++":"++(printExpr ctx t1)++"."++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))
@@ -174,11 +199,18 @@ printExpr ctx (ann,expr)=
 						Sigma str t1 t2	-> let name=freshName ctx str in
 									"exists "++str++":"++(printExpr ctx t1)++"."++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))
 						Pair t1 t2	-> "("++(printExpr ctx t1)++","++(printExpr ctx t2)++")"
-						ProjL t1	-> "left "++(bracketUnary ctx t1)
-						ProjR t1	-> "right "++(bracketUnary ctx t1)
+						ProjL t1	-> "fst "++(bracketUnary ctx t1)
+						ProjR t1	-> "snd "++(bracketUnary ctx t1)
 						Nat 		-> "nat"
 						Z 		-> "0"
 						S t1 		-> "s "++(bracketUnary ctx t1)
+
+						Sum t1 t2	-> (bracketOp True 1 AssocLeft ctx t1)++" or "++(bracketOp False 1 AssocLeft ctx t2)
+						DisjL t1	-> "left "++(bracketUnary ctx t1)
+						DisjR t1	-> "right "++(bracketUnary ctx t1)
+						Exhaust t0 (_,(Lambda str t1 t2)) (_,(Lambda str2 t3 t4)) -> let name=freshName ctx str in
+													 "exhaust "++(printExpr ctx t0)++" with "++name++" case "++(printExpr ctx t1)++"->"++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))++" case "++(printExpr ctx t1)++"->"++(printExpr (Map.insert name (t3,Nothing) ctx) (open t4 name))
+						Exhaust t0 t1 t2-> error ("Exhaust encountered whose arguments aren't lambdas (I don't think this should happen")
 						Induct t1 t2 t3 t4-> "induction "++(bracketInduct ctx t1)++" "++(bracketInduct ctx t2)++" "++(bracketInduct ctx t3)++" "++(bracketInduct ctx t4)
 
 						Let str t1 t2 t3-> let name=freshName ctx str in

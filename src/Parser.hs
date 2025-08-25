@@ -69,7 +69,7 @@ operator w=try (do
 
 			
 reservedWords::[String]
-reservedWords=["lambda","exists","forall","type","and","or","left","right","axiom","lemma","define","let","in","s","nat","induction"]
+reservedWords=["lambda","exists","forall","type","and","or","fst","snd","left","right","axiom","lemma","define","let","in","s","nat","induction","exhaust","case","with"]
 	
 isUniverseParser::(Parsec Void String ()) --Kinda hacky to repeat the parser here
 isUniverseParser=do
@@ -169,8 +169,26 @@ parseLet=annotate (do
 				put(context)
 				return (Let name ty value body))
 
-
-
+parseCase::String->Parser AnnExpr
+parseCase name=annotate (do
+				reserved "case"
+				ty<-parseExpr
+				reserved "->"
+				context<-get
+				put (name:context)
+				body<-parseExpr
+				put(context)
+				return (Lambda name ty body))
+	
+parseExhaust::Parser AnnExpr
+parseExhaust=annotate (do
+				reserved "exhaust"
+				disj<-parseExpr
+				reserved "with"
+				name<-parseIdentifier
+				case1<-parseCase name
+				case2<-parseCase name
+				return (Exhaust disj case1 case2))
 		
 
 parseParenthesis::Parser AnnExpr
@@ -201,7 +219,7 @@ parseUnaryOperator sym con=do
 												((min s1 s2,max e1 e2),expr))											
 parseUnaryOperators::Parser (AnnExpr->AnnExpr)
 parseUnaryOperators=do
-						ops<-some ((parseUnaryOperator "left" ProjL) <|> (parseUnaryOperator "right" ProjR) <|> (parseUnaryOperator "s" S))
+						ops<-some ((parseUnaryOperator "fst" ProjL) <|> (parseUnaryOperator "snd" ProjR) <|> (parseUnaryOperator "left" DisjL) <|> (parseUnaryOperator "right" DisjR) <|> (parseUnaryOperator "s" S))
 						return (foldl1 (.) ops)
 
 
@@ -215,43 +233,44 @@ parseApplication=
 										let (s1,e1)=fst t1 in
 										let (s2,e2)=fst t2 in
 											((min s1 s2,max e1 e2),expr))																		
-parseBinaryOperator::(Parser a)->String->Parser (AnnExpr->AnnExpr->AnnExpr)
-parseBinaryOperator p name=
+parseBinaryOperator::(Parser a)->String->Maybe (AnnExpr->AnnExpr->ExprF SourceRegion)->Parser (AnnExpr->AnnExpr->AnnExpr)
+parseBinaryOperator p name con=
 							do
 								(ident_ann,_)<-capturePos p
 								context<-get
-								return (\t1 t2->
-										let ident=
-											(ident_ann,case List.elemIndex name context of
-												Just lvl -> BVar lvl
-												Nothing -> FVar name) in
-										let expr ann=(ann,App ident (ann,Pair t1 t2)) in
-										let (s1,e1)=fst t1 in
-										let (s2,e2)=fst t2 in
-											expr (min s1 s2,max e1 e2))	
+								return (case con of
+										Just c -> (\t1 t2 -> (ident_ann,c t1 t2))
+										Nothing -> (\t1 t2->
+											let ident=
+												(ident_ann,case List.elemIndex name context of
+													Just lvl -> BVar lvl
+													Nothing -> FVar name) in
+											let expr ann=(ann,App ident (ann,Pair t1 t2)) in
+											let (s1,e1)=fst t1 in
+											let (s2,e2)=fst t2 in
+												expr (min s1 s2,max e1 e2)))
 
 
 operatorTable::[[Operator Parser AnnExpr]]
 operatorTable=[
 				[Prefix parseUnaryOperators],
 				[InfixL parseApplication],
-				[InfixL (parseBinaryOperator (operator "*") "*")],
-				[InfixL (parseBinaryOperator (operator "+") "+")],
-				[InfixN (parseBinaryOperator (operator "=") "=")],
-				[InfixN (parseBinaryOperator (operator ">") ">")],
-				[InfixN (parseBinaryOperator (operator "<") "<")],
-				[InfixN (parseBinaryOperator (operator ">=") ">=")],
-				[InfixN (parseBinaryOperator (operator "<=") "<=")],
-
-				[InfixL (parseBinaryOperator (reserved "and") "and")],
-				[InfixL (parseBinaryOperator (reserved "or") "or")],
-				[InfixR (parseBinaryOperator (operator "=>") "=>")],
-				[InfixN (parseBinaryOperator (operator "<=>") "<=>")]
+				[InfixL (parseBinaryOperator (operator "*") "*" Nothing)],
+				[InfixL (parseBinaryOperator (operator "+") "+" Nothing)],
+				[InfixN (parseBinaryOperator (operator "=") "=" Nothing)],
+				[InfixN (parseBinaryOperator (operator ">") ">" Nothing)],
+				[InfixN (parseBinaryOperator (operator "<") "<" Nothing)],
+				[InfixN (parseBinaryOperator (operator ">=") ">=" Nothing)],
+				[InfixN (parseBinaryOperator (operator "<=") "<=" Nothing)],
+				[InfixL (parseBinaryOperator (reserved "and") "and" Nothing)],
+				[InfixL (parseBinaryOperator (reserved "or") "or" (Just Sum))],
+				[InfixR (parseBinaryOperator (operator "=>") "=>" Nothing)],
+				[InfixN (parseBinaryOperator (operator "<=>") "<=>" Nothing)]
 
 			]
 
 parseTerm::Parser AnnExpr
-parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>parseNat<|>parseZero<|>parseInduction<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression") 
+parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>parseNat<|>parseZero<|>parseInduction<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression")<|>(parseExhaust<?> "case expression")
 
 parseExpr=(makeExprParser parseTerm operatorTable)<?>"expression"
 
