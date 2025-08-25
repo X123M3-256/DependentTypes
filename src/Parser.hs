@@ -312,6 +312,11 @@ parseProgram=do
 
 parseString::String->(Either (ParseErrorBundle String Void) Program)
 parseString str=parse (evalStateT parseProgram []) "" str
+
+parseExprString::String->(Either (ParseErrorBundle String Void) (Expr SourceRegion))
+parseExprString str=parse (evalStateT parseExpr []) "" str
+
+
 --parseFile::FilePath->IO (Either (ParseErrorBundle String Void) Program)
 --parseFile path=do
 --			except<-Exception.try (readFile path)
@@ -321,7 +326,7 @@ parseString str=parse (evalStateT parseProgram []) "" str
 
 --myParseTest p=parseTest (evalStateT p [])
 
-expr str=case (parse (evalStateT parseExpr []) "" str) of
+expr str=case (parse (evalStateT (parseExpr<*eof) []) "" str) of
 				Left err -> error (errorBundlePretty err)
 				Right res -> res
 

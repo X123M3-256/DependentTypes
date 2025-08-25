@@ -6,8 +6,10 @@ import PrettyPrinter
 import Typecheck
 import Error
 import Text.Megaparsec.Error
+import Control.Monad
 import Control.Exception
 import System.FilePath
+import System.Console.Haskeline
 
 prelude::Context SourceRegion
 prelude=Map.fromList
@@ -58,12 +60,37 @@ processFiles parent ((sr,path):paths) ctx=do
 								case result of
 									Left err -> return (Left err)
 									Right newctx -> return (typecheck path defs newctx)
+eval::(Context SourceRegion)->String->String
+eval ctx line=
+		case parseExprString line of
+			Left err  -> errorBundlePretty err
+			Right res -> "    "++printExpr ctx (normalize ctx res)
+
+
+repl::Context SourceRegion -> IO()
+repl ctx= runInputT defaultSettings loop
+    where
+        loop :: InputT IO ()
+        loop = do
+            minput <- getInputLine " > "
+            case minput of
+                Nothing -> return ()
+                Just "quit" -> return ()
+                Just input -> do outputStrLn $ (eval ctx input)
+                                 loop
+
+
 
 							
 main::IO()
 main=do
 		result<-processFiles "" [((SourcePos 0 0,SourcePos 0 0),"test/testnat.txt")] prelude
-		putStrLn (case result of
-					Left (fname,err) -> printError fname err
-					Right res -> "It typechecks!")
+		case result of
+			Left (fname,err) -> do
+					putStrLn(printError fname err)
+					return()
+			Right ctx -> do
+					putStrLn "Loaded file test/testnat.txt"
+					repl ctx
+					return()
 		return ()
