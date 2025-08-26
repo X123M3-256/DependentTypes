@@ -141,10 +141,15 @@ parseNat=annotate (do
 			reserved "nat"
 			return Nat)
 
-parseZero::Parser AnnExpr
-parseZero=annotate (do
-			symbol "0"
-			return Z)
+
+numToExpr::SourceRegion->Integer->AnnExpr
+numToExpr sr n=if n==0 then (sr,Z) else (sr,S (numToExpr sr (n-1)))
+
+parseNumber::Parser AnnExpr
+parseNumber=do
+			(sr,num)<-capturePos (some digitChar)
+			sc
+			return(numToExpr sr (read num))
 
 parseInduction::Parser AnnExpr
 parseInduction=annotate (do
@@ -271,7 +276,7 @@ operatorTable=[
 			]
 
 parseTerm::Parser AnnExpr
-parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>parseNat<|>parseZero<|>parseInduction<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression")<|>(parseExhaust<?> "case expression")
+parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>parseNat<|>parseNumber<|>parseInduction<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression")<|>(parseExhaust<?> "case expression")
 
 parseExpr=(makeExprParser parseTerm operatorTable)<?>"expression"
 

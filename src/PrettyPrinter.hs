@@ -180,6 +180,13 @@ bracketInduct ctx expr=
 					Let _ _ _ _	-> bracket str
 
 
+isNatural::Expr a->Maybe Int
+isNatural (_,Z) = Just 0
+isNatural (_,S n) = case isNatural n of
+			Nothing -> Nothing
+			Just n -> Just (n+1)
+isNatural _ = Nothing
+
 
 printExpr::(Context a)->(Expr a)->String
 printExpr ctx (ann,expr)=
@@ -203,7 +210,9 @@ printExpr ctx (ann,expr)=
 						ProjR t1	-> "snd "++(bracketUnary ctx t1)
 						Nat 		-> "nat"
 						Z 		-> "0"
-						S t1 		-> "s "++(bracketUnary ctx t1)
+						S t1 		-> case isNatural t1 of
+									Just n -> show (n+1)
+									Nothing -> "s "++(bracketUnary ctx t1)
 
 						Sum t1 t2	-> (bracketOp True 1 AssocLeft ctx t1)++" or "++(bracketOp False 1 AssocLeft ctx t2)
 						DisjL t1	-> "left "++(bracketUnary ctx t1)
