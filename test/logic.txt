@@ -1,0 +1,124 @@
+axiom empty:type
+axiom unit:type
+axiom trivial:unit
+axiom void:forall T:type.empty=>T
+
+lemma not:type=>type:=lambda P:type.P=>empty
+
+lemma <=>:type and type=>type:=
+	lambda args:type and type.
+		(fst args=>snd args) and (snd args=>fst args)
+
+axiom excluded_middle:forall P:type.P or not P 
+
+
+
+
+
+
+
+
+#Properties of equality relation
+
+#Symmetry
+
+#TODO implication symbol cannot be used with type level functions - this needs to be a primitive
+lemma replace_with:forall T:type.forall x:T.forall y:T.forall P:(forall n:T.type).x=y=>P(x)=>P(y):=
+	lambda T:type.
+	lambda x:T.
+	lambda y:T.
+		lambda P:(forall n:T.type).
+			lambda xy_eq:x=y.
+				lambda p:P(x).
+					replace xy_eq in p
+		
+
+lemma eq_sym:forall T:type.forall x:T.forall y:T.x=y=>y=x:=
+	lambda T:type.
+	lambda x:T.
+	lambda y:T.
+	lambda xy_eq:x=y.
+		let eq:x=x:=refl in
+		replace xy_eq in eq
+
+#Transitivity
+lemma eq_transitive:forall T:type.forall x:T.forall y:T.forall z:T.((x=y and y=z)=>x=z):=
+	lambda T:type.
+	lambda x:T.
+	lambda y:T.
+	lambda z:T.
+		lambda eqs:(x=y and y=z).replace (snd eqs) in (fst eqs)
+
+
+#Basic lemmas
+
+#Double negation elimination
+
+lemma double_negative:forall P:type.P<=>(not (not P)):=
+	lambda P:type.
+		let forward:P=>not (not P):=
+			lambda ass:P.
+			lambda ass2:not P.
+				ass2 ass in
+		let backward:not (not P)=>P:=
+			lambda ass:not (not P).
+				exhaust excluded_middle P with p
+					case P -> p
+					case not P -> void P (ass p)
+		in (forward,backward)
+
+#Demorgan laws
+
+lemma demorgan_and:forall P:type.forall Q:type.not (P and Q)<=>(not P or not Q):=
+	lambda P:type.
+	lambda Q:type.
+	let forward:not (P and Q)=>(not P or not Q):=
+		lambda ass:not(P and Q).
+			exhaust excluded_middle P with p
+				case P ->
+					exhaust excluded_middle Q with q
+						case Q -> void (not P or not Q) (ass (p,q))
+						case not(Q) -> right q
+				case not(P) -> left p in
+	let backward:(not P or not Q)=>not (P and Q):=
+		lambda ass:not P or not Q.
+		lambda pq:P and Q.
+			exhaust ass with npq
+				case not(P) -> npq (fst pq) 
+				case not(Q) -> npq (snd pq) in
+	(forward,backward)
+
+
+#Law of contraposition
+
+lemma contraposition:forall P:type.forall Q:type.(P=>Q) <=> (not Q=>not P):=
+	lambda P:type.
+	lambda Q:type.
+
+	let forward: forall A:type.forall B:type.(A=>B) => (not B=>not A):=
+		lambda A:type.
+		lambda B:type.
+		lambda ass:A=>B.
+		lambda notB:not B.
+			lambda x:A.notB (ass x) in
+	let backward:(not Q=>not P) => (P=>Q):=
+		lambda ass:not Q=> not P.
+			let contra:not(not P)=>not(not Q):=forward (not Q) (not P) ass in
+			lambda x:P.
+				(snd(double_negative Q)) (contra ((fst(double_negative P)) x)) in	
+	(forward P Q,backward)
+
+
+#Identical elements map to identical resuls
+
+define map_uniqueness:forall T:type.forall f:T=>T.forall x:T.forall y:T.x=y=>f(x)=f(y):=
+	lambda T:type.
+	lambda f:T=>T.
+	lambda x:T.
+	lambda y:T.
+		lambda xy_equal:x=y.
+			let f_x_refl:f(x)=f(x):=refl in
+			replace xy_equal in f_x_refl
+
+
+

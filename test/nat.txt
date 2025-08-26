@@ -1,0 +1,571 @@
+import prelude.txt
+
+##Properties of successor function
+
+
+##Successor is always nonzero
+define s_nonzero:forall n:nat.(s n=0)=>empty :=
+	let disjoint_ty:nat=>type:=
+		lambda n:nat.
+			induction (lambda z:nat.type) unit (lambda z:nat.lambda ass:type.empty) n
+	in lambda n:nat.
+		lambda succ_zero:(s n=0).
+			let flipped_eq:0=s(n):=(eq_sym nat (s(n)) 0 succ_zero) in
+				replace_with nat 0 (s n) disjoint_ty flipped_eq trivial
+
+#Successor function is injective
+
+define pred:nat=>nat:=
+	lambda n:nat.
+		induction (lambda z:nat.nat) 0 (lambda z:nat.lambda pred_z:nat.z) n
+
+define s_injective:forall x:nat.forall y:nat.s(x)=s(y)=>x=y:=
+	lambda x:nat.
+		lambda y:nat.
+			lambda succ_eq:s(x)=s(y).
+				map_uniqueness nat pred (s(x)) (s(y)) succ_eq
+
+
+#Define addition	
+
+define +:nat and nat=>nat:=
+	lambda args:nat and nat.
+			induction (lambda z:nat.nat) (fst args) (lambda z:nat.lambda x_plus_y:nat.s x_plus_y) (snd args)
+
+
+
+#Properties of addition
+
+#Zero is the identity of addition
+
+lemma add_ident:forall x:nat.0+x=x:=
+	let hyp:nat=>type:=lambda x:nat.0+x=x in
+	let base:hyp 0:=refl in
+	let step:forall x:nat.hyp x=>hyp (s x):=
+		lambda x:nat.
+			lambda ass:0+x=x.
+				let a:0+s(x)=s(0+x):=refl in
+				let b:s(0+x)=s(x):=map_uniqueness nat (lambda n:nat.s(n)) (0+x) x ass in
+					eq_transitive nat (0+s(x)) (0+s(x)) (s(x)) (a,b)
+	in
+		lambda x:nat.induction hyp base step x
+
+#Addition commutes
+
+lemma add_factor_succ_left:forall x:nat.forall y:nat.s(x)+y=s(x+y):=
+	lambda x:nat.
+	lambda y:nat.
+		let hyp:nat=>type:=lambda z:nat.s(x)+z=s(x+z) in
+		let base:hyp 0:=refl in 
+		let step:forall z:nat.hyp z=>hyp(s(z)):=
+			lambda z:nat.
+			lambda ass:hyp z.
+				map_uniqueness nat (lambda w:nat.s(w)) (s(x)+z) (s(x+z)) ass in
+		induction hyp base step y
+
+
+lemma add_commutative:forall x:nat.forall y:nat.x+y=y+x:=
+	lambda x:nat.
+	lambda y:nat.
+		let hyp:nat=>type:=lambda z:nat.x+z=z+x in
+		let base:hyp 0:=
+			eq_sym nat (0+x) x (add_ident x)
+		in let step:forall z:nat.hyp(z)=>hyp(s(z)):=
+			lambda z:nat.
+			lambda ass:hyp(z).
+				let t1:s(z)+x=s(z+x):=add_factor_succ_left z x in
+				let t2:s(x+z)=s(z+x):=map_uniqueness nat (lambda z:nat.s(z)) (x+z) (z+x) ass in
+				let t3:s(x+z)=s(z)+x:= replace (eq_sym nat (s z + x) (s(z+x)) t1) in t2 in #TODO type annotation should not be required
+					t3
+		in induction hyp base step y
+
+
+#Addition is associative
+
+lemma add_associative:forall x:nat.forall y:nat.forall z:nat.(x+y)+z=x+(y+z):=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+		let hyp:nat=>type:=lambda w:nat.(x+y)+w=x+(y+w) in
+		let base:hyp 0:=refl in
+		let step:forall w:nat.hyp(w)=>hyp(s(w)):=
+			lambda w:nat.
+			lambda ass:hyp(w).
+				map_uniqueness nat (lambda n:nat.s(n)) ((x+y)+w) (x+(y+w)) ass
+		in induction hyp base step z
+
+
+lemma add_associative_right:forall x:nat.forall y:nat.forall z:nat.x+(y+z)=(x+y)+z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+		eq_sym nat ((x+y)+z) (x+(y+z)) (add_associative x y z)
+
+
+lemma add_injective:forall x:nat.forall y:nat.forall z:nat.x+z=y+z=>x=y:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+		let hyp:nat=>type:=lambda n:nat.x+n=y+n=>x=y in
+		let base:hyp 0:=lambda p:x=y.p in
+		let step:forall n:nat.hyp(n)=>hyp(s(n)):=
+			lambda n:nat.
+			lambda ass:x+n=y+n=>x=y.
+			lambda ass2:x+s(n)=y+s(n).
+				ass (s_injective (x+n) (y+n) ass2) in
+		induction hyp base step z
+
+
+
+
+#Define multiplication
+
+define *:nat and nat=>nat:=
+	lambda args:nat and nat.
+			induction (lambda z:nat.nat) 0 (lambda z:nat.lambda x_times_y:nat.x_times_y+(snd args)) (fst args)
+
+
+
+
+#Multiplication by zero gives zero
+
+
+lemma mul_zero:forall x:nat.x*0=0:=
+	let hyp:nat=>type:=lambda z:nat.z*0=0 in
+	let base:hyp 0:=refl in
+	let step:forall z:nat.hyp(z)=>hyp(s(z)):=
+		lambda z:nat.
+			lambda ass:hyp(z).
+				ass in
+		lambda x:nat.induction hyp base step x
+	
+
+#One is the identity of multiplication
+
+lemma mul_ident:forall x:nat.x*s(0)=x:=
+	let hyp:nat=>type:=lambda z:nat.z*s(0)=z in
+	let base:hyp 0:=refl in
+	let step:forall z:nat.hyp(z)=>hyp(s(z)):=
+		lambda z:nat.
+		lambda ass:hyp(z).
+			map_uniqueness nat (lambda w:nat.s(w)) (z*s(0)) z ass in
+	lambda x:nat.induction hyp base step x
+
+
+#Multiplication commutes
+
+
+lemma mul_factor_succ_right:forall x:nat.forall y:nat.x*s(y)=x*y+x:=
+	lambda x:nat.
+		lambda y:nat.
+			let hyp:nat=>type:=lambda z:nat.z*s(y)=z*y+z in
+			let base:hyp(0):=refl in
+			let step:forall z:nat.hyp(z)=>hyp(s(z)):=
+				lambda z:nat.
+					lambda ass:hyp(z).
+						let t1:s(z)*s(y)=z*s(y)+s(y):=refl in
+						let t2:s(z)*s(y)=z*y+z+s(y):=replace ass in t1 in
+						let t3:s(z)*s(y)=z*y+(z+s(y)):=replace (add_associative (z*y) z (s(y))) in t2 in
+						let t4:s(z)*s(y)=z*y+(s(y)+z):=replace (add_commutative z (s(y))) in t3 in
+						let t5:s(z)*s(y)=z*y+(y+s(z)):=replace ((add_factor_succ_left y z)) in t4 in
+						let t6:s(z)*s(y)=s(z)*y+s(z):=replace (add_associative_right (z*y) y (s(z))) in  t5 in
+							t6 in
+								induction hyp base step x
+
+lemma mul_commutative:forall x:nat.forall y:nat.x*y=y*x:=
+	lambda x:nat.
+	lambda y:nat.
+		let hyp:nat=>type:=lambda z:nat.z*y=y*z in
+		let base:hyp(0):=eq_sym nat (y*0) 0 (mul_zero y) in
+		let step:forall z:nat.hyp(z)=>hyp(s(z)):=
+			lambda z:nat.
+				lambda ass:hyp(z).
+					let t1:s(z)*y=z*y+y:=refl in
+					let t2:s(z)*y=y*z+y:=replace ass in t1 in
+					let t3:s(z)*y=y*s(z):=replace (eq_sym nat (y*s(z)) (y*z+y) (mul_factor_succ_right y z)) in t2 in
+						t3 in
+			induction hyp base step x
+
+##Multiplication distributes over addition
+
+lemma mul_distributive:forall x:nat.forall y:nat.forall z:nat.x*(y+z)=x*y+x*z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	let hyp:nat=>type:=lambda w:nat.w*(y+z)=w*y+w*z in
+	let base:hyp(0):=refl in
+	let step:forall w:nat.hyp(w)=>hyp(s(w)):=
+		lambda w:nat.
+			lambda ass:hyp w.
+				let t1:s(w)*(y+z)=w*(y+z)+(y+z):=refl in
+				let t2:s(w)*(y+z)=(w*y+w*z)+(y+z):=replace ass in t1 in
+				let t3:s(w)*(y+z)=(w*y+w*z)+(z+y):=replace (add_commutative y z) in t2 in
+				let t4:s(w)*(y+z)=w*y+(w*z+(z+y)):=replace (add_associative (w*y) (w*z) (z+y)) in t3 in
+				let t5:s(w)*(y+z)=w*y+((w*z+z)+y):=replace (add_associative_right (w*z) z y) in t4 in
+				let t6:s(w)*(y+z)=w*y+(y+(w*z+z)):=replace (add_commutative (w*z+z) y) in t5 in
+				let t7:s(w)*(y+z)=(s(w)*y)+(s(w)*z):=replace (add_associative_right (w*y) y (w*z+z)) in t6 in
+					t7 in
+		induction hyp base step x
+
+lemma mul_distributive_right:forall x:nat.forall y:nat.forall z:nat.(x+y)*z=x*z+y*z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+		let t1:(x+y)*z=z*(x+y):=mul_commutative (x+y) z in
+		let t2:(x+y)*z=z*x+z*y:=replace mul_distributive z x y in t1 in
+		let t3:(x+y)*z=x*z+z*y:=replace mul_commutative z x in t2 in
+		let t4:(x+y)*z=x*z+y*z:=replace mul_commutative z y in t3 in
+			t4
+
+#Multiplication is associative
+
+lemma mul_associative:forall x:nat.forall y:nat.forall z:nat.x*y*z=x*(y*z):=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+		let hyp:nat=>type:=lambda w:nat.(w*y)*z=w*(y*z) in
+		let base:hyp(0):=refl in
+		let step:forall w:nat.hyp(w)=>hyp(s(w)):=
+			lambda w:nat.
+			lambda ass:hyp w.
+				let t1:(s(w)*y)*z=(w*y+y)*z:=refl in
+				let t2:(s(w)*y)*z=w*y*z+y*z:=replace (mul_distributive_right (w*y) y z) in t1 in
+#				let t3:(s(w)*y)*z=s(w)*(y*z):=replace ass in t2 in #TODO this version should work
+				let t3:(s(w)*y)*z=w*(y*z)+y*z:=replace ass in t2 in
+					t3 in
+		induction hyp base step x
+
+
+
+
+##Define order operators
+
+lemma <=:(nat and nat)=>type:=
+	lambda x_y:nat and nat.
+		let x:nat:=fst x_y in
+		let y:nat:=snd x_y in
+			exists z:nat.x+z=y
+
+lemma >=:(nat and nat)=>type:=
+	lambda x_y:nat and nat.
+		let x:nat:=fst x_y in
+		let y:nat:=snd x_y in
+			y<=x
+
+lemma <:(nat and nat)=>type:=
+	lambda x_y:nat and nat.
+		let x:nat:=fst x_y in
+		let y:nat:=snd x_y in
+			(x<=y) and not (x=y)
+
+lemma >:(nat and nat)=>type:=
+	lambda x_y:nat and nat.
+		let x:nat:=fst x_y in
+		let y:nat:=snd x_y in
+			y<x
+
+#Misc lemmas
+
+lemma zero_only_additive_identity:forall x:nat.forall y:nat.x+y=x=>y=0:=
+	lambda x:nat.
+	lambda y:nat.
+	let hyp:nat=>type:=lambda z:nat.z+y=z=>y=0 in
+	let base:hyp 0:=lambda p1:0+y=0.replace add_ident y in p1 in
+	let step:forall n:nat.hyp(n)=>hyp(s(n)):=
+		lambda n:nat.
+		lambda ass:hyp(n).
+		lambda p1:s(n)+y=s(n).
+			ass (s_injective (n+y) n (replace add_factor_succ_left n y in p1)) in
+		induction hyp base step x
+
+
+lemma less_than_or_equal_to_zero_implies_zero:forall x:nat.x<=0 =>x=0:=
+	lambda x:nat.
+	lambda x_lte_0:x<=0.
+		let y:nat:=fst x_lte_0 in
+		let hyp:nat=>type:=lambda n:nat.x+n=0=>x=0 in
+		let base:hyp(0):=lambda p1:x+0=0. p1 in
+		let step:forall n:nat.hyp(n)=>hyp(s(n)):=
+			lambda n:nat.
+			lambda ass:hyp(n).
+			lambda p1:x+s(n)=0.
+				void (x=0) (s_nonzero (x+n) p1) in
+		(induction hyp base step y) (snd x_lte_0)
+	
+#Given x and y, x is either greater than, equal to or less than y
+
+lemma lte_and_gte_implies_eq:forall x:nat.forall y:nat.(x<=y and x>=y)=>x=y:= 
+	lambda x:nat.
+	lambda y:nat.
+	lambda ass:(x<=y and x>=y).
+		let k:nat:=fst (fst ass) in
+		let p1:x+k=y:=snd (fst ass) in
+		let j:nat:=fst (snd ass) in
+		let p2:x=y+j:=eq_sym nat (y+j) x (snd (snd ass)) in
+ 		let p2b:y+j+k=y:= replace p2 in p1 in
+		let p3:y+(j+k)=y:=replace (add_associative y j k) in p2b in
+		let p4:j<=0:=(k,zero_only_additive_identity y (j+k) p3) in
+		let p5:j=0:=less_than_or_equal_to_zero_implies_zero j p4 in
+
+		let p6:x=y+0:=replace p5 in p2 in p6 #TODO type annotation should not be necessary
+
+lemma between_two_equals:forall x:nat.forall y:nat.forall z:nat.((y>=x and y<=z) and (x=z))=>x=y:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda i:(y>=x and y<=z) and (x=z).
+		let y_gt_x:y>=x:=fst fst i in
+		let y_lt_z:y<=z:=snd fst i in
+		let x_eq_z:x=z:=snd i in
+		let y_lt_x:y<=x:=replace (eq_sym nat x z x_eq_z) in y_lt_z in
+			eq_sym nat y x (lte_and_gte_implies_eq y x (y_lt_x,y_gt_x))
+
+#Order relations are transitive
+
+lemma lte_transitive:forall x:nat.forall y:nat.forall z:nat.(x<=y and y<=z) => x<=z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda xyz:x<=y and y<=z.
+
+		let x_lt_y:x<=y:=fst xyz in
+		let y_lt_z:y<=z:=snd xyz in
+
+		let w:nat:=fst x_lt_y in
+		let k:nat:=fst y_lt_z in
+
+		let p1:x+w=y:=snd x_lt_y in
+		let p2:y+k=z:=snd y_lt_z in
+
+		let t1:x+w+k=y+k:=map_uniqueness nat (lambda n:nat.n+k) (x+w) y p1 in
+		let t2:x+(w+k)=y+k:=replace (add_associative x w k) in t1 in
+		let t3:x+(w+k)=z:=eq_transitive nat (x+(w+k)) (y+k) z (t2,p2) in
+			(w+k,t3)
+
+lemma gte_transitive:forall x:nat.forall y:nat.forall z:nat.(x>=y and y>=z) => x>=z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda xyz:x>=y and y>=z.
+
+	let y_gt_x:y<=x:=fst xyz in
+	let z_gt_y:z<=y:=snd xyz in
+		lte_transitive z y x (z_gt_y,y_gt_x)
+
+
+lemma lt_transitive:forall x:nat.forall y:nat.forall z:nat.(x<y and y<z) => x<z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda xyz:x<y and y<z.
+		let x_lte_y_lte_z:x<=y and y<=z:= (fst (fst xyz),fst (snd xyz)) in
+		let x_lte_z:x<=z:=lte_transitive x y z x_lte_y_lte_z in
+		let x_not_y:not(x=y):=snd (fst xyz) in
+		let x_not_z:not (x=z):=lambda ass:x=z.x_not_y (between_two_equals x y z (x_lte_y_lte_z,ass))
+			in
+			(x_lte_z,x_not_z)
+
+lemma gt_transitive:forall x:nat.forall y:nat.forall z:nat.(x>y and y>z) => x>z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda xyz:x>y and y>z.
+
+	let y_lt_x:y<x:=fst xyz in
+	let z_lt_y:z<y:=snd xyz in
+		lt_transitive z y x (z_lt_y,y_lt_x)
+
+
+#Addition preserves ordering
+
+lemma lte_addition:forall x:nat.forall y:nat.forall z:nat.x<=y=>x+z<=y+z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda x_lte_y:x<=y.
+		let j:nat:=fst x_lte_y in
+		let p1:x+j=y:=snd x_lte_y in
+		let p2:x+j+z=y+z:=map_uniqueness nat (lambda w:nat.w+z) (x+j) y p1 in
+		let p3:x+(j+z)=y+z:=replace add_associative x j z in p2 in
+		let p4:x+(z+j)=y+z:=replace add_commutative j z in p3 in
+		let p5:x+z+j=y+z:=replace add_associative_right x z j in p4 in
+			(j,p5)
+
+lemma lt_addition:forall x:nat.forall y:nat.forall z:nat.x<y=>x+z<y+z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda x_lt_y:x<y.
+		let p1:x+z<=y+z:=lte_addition x y z (fst x_lt_y) in 
+		let p2:not(x=y)=>not(x+z=y+z):=(fst (contraposition (x+z=y+z) (x=y))) (add_injective x y z) in	
+		let p3:not(x+z=y+z):=p2 snd (x_lt_y) in
+		(p1,p3)
+
+lemma gte_addition:forall x:nat.forall y:nat.forall z:nat.x>=y=>x+z>=y+z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda y_lte_x:y<=x.
+		lte_addition y x z y_lte_x
+
+
+lemma gt_addition:forall x:nat.forall y:nat.forall z:nat.x>y=>x+z>y+z:=
+	lambda x:nat.
+	lambda y:nat.
+	lambda z:nat.
+	lambda y_lt_x:y<x.
+		lt_addition y x z y_lt_x
+
+
+
+##(x<=y)=>empty
+#
+#
+##x<=y=>not x>y
+#
+##x<=y implies
+##x+k=y
+#
+#
+##x<=y   x>=y
+#
+##x>y implies
+##y+j=x
+##not x=y
+#
+##y+j+k=y
+#
+##j+k=0
+#
+#
+#		
+#
+#
+#
+#
+
+
+
+
+lemma lte_negation:forall x:nat.forall y:nat.x<=y=>not(x>y):=
+	lambda x:nat.
+	lambda y:nat.
+		lambda ass1:x<=y.
+		lambda ass2:x>y.
+			let p1:x<=y:=ass1 in
+			let p2:x>=y:= fst ass2 in
+			let p3:x=y:=lte_and_gte_implies_eq x y (p1,p2) in
+				(snd ass2) (eq_sym nat x y p3)
+
+
+#lemma lte_negation2:forall x:nat.forall y:nat.not(x>y)=>x<=y:=
+#	lambda x:nat.
+#	lambda y:nat.
+#	lambda not_x_gt_y:not(x>y).
+#		let p1:not(y<=x) or not(not(y=x)):=(fst (demorgan_and (y<=x) (not (y=x)))) not_x_gt_y in#
+#		let case_a:not(y<=x)=>x<=y:=
+#			lambda y_lte_x:not(y<=x).
+#				0
+#				in
+#			0
+#	
+#
+#
+##not(x>y)=>x<=y
+#
+##x>y=>empty
+#
+##not(y<=x) or x=y
+#
+#
+#
+#
+##not(y<=x)=>x<=y
+#
+#
+##x<=y or not(x<=y)
+#
+#
+##not (x<=y or y<=x)
+#
+##not(x<=y) and not(y<=x)
+#
+#
+#
+##not(y<=x) and not (x<=y))
+#
+#
+##not (y<=x or x<=y)
+#
+##x<=y
+##x+k=y
+#
+#
+#
+#	#let contra:x<=y=>not(x>y):=
+#	#in lambda w:x>y.(fst (contraposition (x<=y) (not(x>y)))) contra (fst(double_negative (x>y)) w)
+#
+##lemma not_lte:forall x:nat.forall y:nat.x<=y=>not(x>y):=
+#
+#
+##lemma gt_lt_eq:forall x:nat.forall y:nat.x>y or x<y or x=y:=
+##	lambda x:nat.
+##	lambda y:nat.
+##		let p1:x<=y or not (x<=y):=excluded_middle (x<=y) in
+##			0
+#
+#
+#
+#
+#
+#
+#
+#
+#
+##Even and odd
+#
+##lemma divides:nat=>nat=>type:=
+##	lambda x:nat.
+##		lambda y:nat.
+##			exists z:nat.x*z=y
+#
+##
+##lemma even:nat=>type:=lambda x:nat. divides s(s(0)) x
+##lemma odd:nat=>type:=lambda x:nat. not (even x)
+##
+##
+#
+##lemma succ_even_is_odd:forall x:nat.even x=>odd (s(x)):=
+##	lambda x:nat.
+##		lambda x_even:even x.
+##			let y:nat:=fst x_even in
+##			let p:y+y=x:=snd x_even in
+##				0
+#
+#
+##y+y=x
+#
+##s(y+y)=s(x)
+#
+##w+w=x+s(x)
+#
+##w+w=s(x+x)
+#
+##z+z=s(y+y)
+#
+##either z=y then this follows
+#
+##or z>y y+y+k+k
+#
+##axiom succ_even:even (s(x))
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
