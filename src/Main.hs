@@ -10,6 +10,7 @@ import Control.Monad
 import Control.Exception
 import System.FilePath
 import System.Console.Haskeline
+import Debug.Trace
 
 prelude::Context SourceRegion
 prelude=Map.fromList
@@ -46,20 +47,25 @@ tryReadFile path=do
 			source<-try (readFile path)
 			return source
 
-processFiles::String->[(SourceRegion,FilePath)]->(Context SourceRegion)->IO (Either (String,(Error SourceRegion)) (Context SourceRegion))
-processFiles parent [] ctx=do
-			return (Right ctx)
-processFiles parent ((sr,path):paths) ctx=do
-			source<-tryReadFile (takeDirectory parent++"/"++path)
-			case source of
-				Left err -> return (Left (parent,(FileNotFound path,ctx,sr)))
-				Right str->case parseString str of
-					Left err -> return (Left (path,((ParseError (errorBundlePretty err)),ctx,(SourcePos 0 0,SourcePos 0 0))))
-					Right (imps,defs) -> do
-								result <- processFiles path imps ctx
-								case result of
-									Left err -> return (Left err)
-									Right newctx -> return (typecheck path defs newctx)
+processFiles::String->[String]->[(SourceRegion,FilePath)]->(Context SourceRegion)->IO (Either (String,(Error SourceRegion)) ([String],(Context SourceRegion)))
+processFiles parent loadedPaths [] ctx=do
+			return (Right (loadedPaths,ctx))
+processFiles parent loadedPaths ((sr,path):paths) ctx=
+			let fullpath = takeDirectory parent++"/"++path in
+				do
+				source<-tryReadFile fullpath
+				if elem fullpath loadedPaths then return(Right(loadedPaths,ctx)) else
+					case source of
+						Left err -> return (Left (parent,(FileNotFound path,ctx,sr)))
+						Right str->case parseString str of
+							Left err -> return (Left (path,((ParseError (errorBundlePretty err)),ctx,(SourcePos 0 0,SourcePos 0 0))))
+							Right (imps,defs) -> do
+										result <- processFiles fullpath loadedPaths imps ctx
+										case result of
+											Left err -> return (Left err)
+											Right (newLoadedPaths,newctx) -> case typecheck fullpath defs newctx of
+																Left err -> return(Left err)
+																Right newctx -> processFiles parent (fullpath:newLoadedPaths) paths newctx
 eval::(Context SourceRegion)->String->String
 eval ctx line=
 		case parseExprString line of
@@ -80,17 +86,23 @@ repl ctx= runInputT defaultSettings loop
                                  loop
 
 
+showLoaded::[String]->IO()
+showLoaded [] = return()
+showLoaded (path:paths) = do
+			putStrLn ("Loaded file "++path)
+			showLoaded paths
+			return()
 
 							
 main::IO()
 main=do
-		result<-processFiles "" [((SourcePos 0 0,SourcePos 0 0),"test/testnat.txt")] prelude
+		result<-processFiles "" [] [((SourcePos 0 0,SourcePos 0 0),"test/testvec.txt")] prelude
 		case result of
 			Left (fname,err) -> do
 					putStrLn(printError fname err)
 					return()
-			Right ctx -> do
-					putStrLn "Loaded file test/testnat.txt"
+			Right (loadedPaths,ctx) -> do
+					showLoaded (reverse loadedPaths)
 					repl ctx
 					return()
 		return ()
