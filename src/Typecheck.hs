@@ -26,28 +26,176 @@ inferUniverse ctx term=do
 									(_)		-> Left (ExpectedUniverse term ty,ctx,fst term)
 
 getFunctionType::(Context a)->(Expr a)->(Error a)->Either (Error a) (String,Expr a,Expr a)
-getFunctionType ctx ty err=case snd (normalizePartial ctx ty) of
+getFunctionType ctx ty err=case snd (simplify ctx (normalizePartial ctx ty)) of
 				(Pi str t1 t2)	-> Right (str,t1,t2)
 				(_)		-> Left err
 
 getPairType::(Context a)->(Expr a)->(Error a)->Either (Error a) (String,Expr a,Expr a)
-getPairType ctx ty err=case snd (normalizePartial ctx ty) of
+getPairType ctx ty err= case snd (simplify ctx (normalizePartial ctx ty)) of
 				(Sigma str t1 t2)-> Right (str,t1,t2)
 				(_)		-> Left err		
 
 
 getSumType::(Context a)->(Expr a)->(Error a)->Either (Error a) (Expr a,Expr a)
-getSumType ctx ty err=case snd (normalizePartial ctx ty) of
+getSumType ctx ty err=case snd (simplify ctx (normalizePartial ctx ty)) of
 				(Sum t1 t2)-> Right (t1,t2)
+				(_)		-> Left err		
+
+getEqType::(Context a)->(Expr a)->(Error a)->Either (Error a) (Expr a,Expr a)
+getEqType ctx ty err=case snd (simplify ctx (normalizePartial ctx ty)) of
+				(Eq t1 t2)-> Right (t1,t2)
 				(_)		-> Left err		
 
 
 getUniverseType::(Context a)->(Expr a)->(Error a)->Either (Error a) Int
-getUniverseType ctx ty err=case snd (normalizePartial ctx ty) of
+getUniverseType ctx ty err=case snd (simplify ctx (normalizePartial ctx ty)) of
 				Universe lvl	-> Right lvl
 				(_)		-> Left err		
 
 
+
+
+
+factorRec::(Context a)->String->(Expr a)->(Expr a)->(Expr a)
+factorRec ctx name t1 (ann,expr)=
+		if snd(normalize ctx t1) == snd(normalize ctx (ann,expr)) then (fst t1,FVar name) else
+		(ann,case expr of
+			Pi str a b ->let str2=(freshName ctx str) in
+					Pi str (factorRec ctx name t1 a) (factorRec (Map.insert str2 (a,Nothing) ctx) name t1  (open b name))
+			Lambda str a b ->let str2=(freshName ctx str) in
+					Lambda str (factorRec ctx name t1 a) (factorRec (Map.insert str2 (a,Nothing) ctx) name t1  (open b name))
+			(App a1 b1) -> App (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
+			Sigma str a b ->let str2=(freshName ctx str) in
+					Sigma str (factorRec ctx name t1 a) (factorRec (Map.insert str2 (a,Nothing) ctx) name t1  (open b name))
+			(Pair a1 b1) ->  Pair (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
+			(ProjL a1) ->  ProjL (factorRec ctx name t1 a1)
+			(ProjR a1) ->  ProjR (factorRec ctx name t1 a1)
+			(Sum a1 b1) ->  Sum (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
+			(DisjL a1) ->  DisjL (factorRec ctx name t1 a1)
+			(DisjR a1) ->  DisjR (factorRec ctx name t1 a1)
+			(Exhaust a1 b1 c1) -> Exhaust (factorRec ctx name t1 a1) (factorRec ctx name t1 b1) (factorRec ctx name t1 c1)
+			(Eq a1 b1) -> Eq (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
+			(Replace a1 b1) ->  Replace (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
+			(S a) ->S (factorRec ctx name t1 a)
+			t1 -> t1)
+
+--Replaces all instances of t1 in expr with a free variable
+factor::(Context a)->(Expr a)->(Expr a)->(String,(Expr a))
+factor ctx t1 expr=
+		let name=(freshName ctx "?") in
+			(name,factorRec ctx name t1 expr)
+
+
+replaceRec::(Context a)->(Expr a)->(Expr a)->(Expr a)->(Expr a)->String->(Expr a)->(Expr a)->Either (Error a) ()
+replaceRec ctx t1 t2 nt1 nt2 name factored targetExpr=
+	let (ann,normalFactored)=factored in
+	let (_,normalExpr)=targetExpr in
+		case (normalFactored,normalExpr) of
+			((BVar i1),_) -> error "Encountered bound variable in replace (this should never happen)"
+			((FVar n1),b) ->if n1==name then
+						(
+						--If we have encountered an instance of t1, check that it can be unified with t1 or t2
+						--Otherwise check that names are the same
+							if snd nt1==snd (normalize ctx (ann,b)) then
+								trace ("Filled hole "++(printExpr ctx t1)) (Right ())
+							else if snd nt2==snd (normalize ctx (ann,b)) then
+								trace ("Filled hole "++(printExpr ctx t2)) (Right ())
+							else
+								Left (ReplaceFailed ("Cannot unify "++n1++" with "++(printExpr ctx (ann,b))),ctx,fst targetExpr)--TODO annotations meaningless	
+	
+						)
+						else if FVar n1==b then 
+							Right ()
+						else
+							Left (ReplaceFailed "FVar",ctx,fst targetExpr)--TODO annotations meaningless	
+							
+			((Universe k1),(Universe k2)) -> if k1==k2 then Right() else Left (ReplaceFailed "Universe",ctx,fst targetExpr)
+			(Pi str1 a1 b1,Pi str2 a2 b2)->
+						let freshStr1=(freshName ctx str1) in
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec (Map.insert str1 (a2,Nothing) ctx) t1 t2 nt1 nt2 name (open b1 freshStr1) (open b2 freshStr1))
+							return ()
+			(Lambda str1 a1 b1,Lambda str2 a2 b2)->
+						let freshStr1=(freshName ctx str1) in
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec (Map.insert str1 (a2,Nothing) ctx) t1 t2 nt1 nt2 name (open b1 freshStr1) (open b2 freshStr1))
+							return ()
+
+
+			(App a1 b1,App a2 b2) -> do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
+							return ()
+			(Sigma str1 a1 b1,Sigma str2 a2 b2)->
+						let freshStr1=(freshName ctx str1) in
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec (Map.insert str1 (a2,Nothing) ctx) t1 t2 nt1 nt2 name (open b1 freshStr1) (open b2 freshStr1))
+							return ()
+			((Pair a1 b1),(Pair a2 b2)) -> do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
+							return ()
+			((ProjL a),(ProjL b)) ->
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
+							return ()
+			((ProjR a),(ProjL b)) ->
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
+							return ()
+			((Sum a1 b1),(Sum a2 b2)) -> do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
+							return ()
+			((DisjL a),(DisjL b)) ->
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
+							return ()
+			((DisjR a),(DisjR b)) ->
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
+							return ()
+			((Exhaust a1 b1 c1),(Exhaust a2 b2 c2)) ->
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name c1 c2)
+							return ()
+
+			((Eq a1 b1),(Eq a2 b2)) -> do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
+							return ()
+			(Refl,Refl) -> Right()
+			((Replace a1 b1),(Replace a2 b2)) -> do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
+							return ()
+			(Nat,Nat)->Right ()
+			(Z,Z)->Right ()
+			((S a),(S b)) ->
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
+							return ()
+			((Induct a1 b1 c1 d1),(Induct a2 b2 c2 d2))->
+						do
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name c1 c2)
+							_<-(replaceRec ctx t1 t2 nt1 nt2 name d1 d2)
+							return ()
+--			(Let str1 t1 u1 v1) == (Let str2 t2 u2 v2)=((snd t1)==(snd t2)) && ((snd u1)==(snd u2)) && ((snd v1)==(snd v2))
+			(a,b) -> Left (ReplaceFailed ("- can't unify "++(printExpr ctx (ann,a))++" with "++(printExpr ctx (ann,b))),ctx,ann)
+
+
+replace::(Context a)->(Expr a)->(Expr a)->(Expr a)->(Expr a)->Either (Error a) ()
+replace ctx t1 t2 initialExpr targetExpr=
+	trace ("Replacing "++printExpr ctx t1++" with "++printExpr ctx t2++" in "++printExpr ctx (simplify ctx initialExpr)++" target "++printExpr ctx (simplify ctx targetExpr)) (
+	let (name,factored)=factor ctx t1 (simplify ctx initialExpr) in
+		(trace ("Factored "++printExpr ctx factored) (replaceRec ctx t1 t2 (normalize ctx t1) (normalize ctx t2) name factored targetExpr)))
 							
 									
 inferType::(Context a)->(Expr a)->Either (Error a) (Expr a)
@@ -78,7 +226,7 @@ inferType ctx (ann,expr)=
 						(t_str,t_dom,t_range)<-getFunctionType ctx funTy (ExpectedPiType funTy,ctx,ann)
 						checkType ctx t2 t_dom
 						let name=freshName ctx t_str in
-							return (substitute (open t_range name) t2 name)
+							return (trace ("App returning "++printExpr ctx (open t_range name)) (substitute (open t_range name) t2 name))
 			(Sigma str t1 t2)->
 					let name=(freshName ctx str) in
 						do
@@ -86,7 +234,7 @@ inferType ctx (ann,expr)=
 							k2<-inferUniverse (Map.insert name (t1,Nothing) ctx) (open t2 name)
 							return (ann,Universe (max k1 k2))
 
-			(Pair t1 t2)	->error("Cannot infer type of pair; (type annotation required but we hope this case is never hit)")
+			(Pair t1 t2)	-> Left (TypeInferenceFailed (ann,expr),ctx,ann)
 			(ProjL t1)	->
 						do
 							argTy<-inferType ctx t1
@@ -111,6 +259,15 @@ inferType ctx (ann,expr)=
 			S t1 		->	do
 							checkType ctx t1 (ann,Nat)
 							return (ann,Nat)
+			Eq t1 t2	->
+						do
+							ty1<-inferType ctx t1
+							ty2<-inferType ctx t2
+							compareTypes ctx ty1 ty2 (TypeMismatch (ann,expr) ty1 ty2,ctx,ann)--Check both sides of = have same type TODO could do with better error message
+							un<-inferType ctx ty1
+							return un
+			Replace _ _	->Left (TypeInferenceFailed (ann,expr),ctx,ann)
+			Refl		->Left (TypeInferenceFailed (ann,expr),ctx,ann)
 			(Induct t1 t2 t3 t4)->
 						do
 							--TODO all annotations are meaningless do them correctly
@@ -130,13 +287,12 @@ inferType ctx (ann,expr)=
 								bodyTy<-inferType (Map.insert name (t1,Just t2) ctx) (open t3 name)
 								return bodyTy
 								
-								
 																
 			
 								
 checkType::(Context a)->(Expr a)->(Expr a)->Either (Error a) ()
 checkType ctx expr ty=
-		--trace ("Expr: "++(printExpr ctx expr)++" Expected type: "++(printExpr ctx (simplify ctx ty))) (
+		trace ("Expr: "++(printExpr ctx expr)++" Expected type: "++(printExpr ctx (simplify ctx ty))) (
 		case snd expr of
 			(BVar _) 	->error("Attempted to check type of bound variable - this should never happen")
 			(FVar name)	->case Map.lookup name ctx of
@@ -166,7 +322,6 @@ checkType ctx expr ty=
 									let resTy=(substitute (open t_range name) t2 name) in
 										compareTypes ctx ty resTy (TypeMismatch expr ty resTy,ctx,fst expr)
 									return ()
-
 --Sigma types are inferred
 			(Pair t1 t2)	->
 						do
@@ -205,8 +360,28 @@ checkType ctx expr ty=
 								checkType (Map.insert name (t3,Nothing) ctx) (open t4 name) ty
 								return ()
 			(Exhaust t0 _ _)-> error "Encountered exhaust without lambdas as arguments (this should not happen)"
+			(Eq t1 t2)	-> 
+						do
+							ty1<- inferType ctx t1
+							ty2<- inferType ctx t2
+							compareTypes ctx ty1 ty2 (TypeMismatch expr ty1 ty2,ctx,fst expr)--Check both sides of = have same type TODO could do with better error message
+							checkType ctx ty1 ty
+							return ()
+			(Refl)		-> 
+						do
+							(eq1,eq2)<-getEqType ctx ty (ExpectedEqType ty,ctx,fst expr)	
+							compareTypes ctx eq1 eq2 (TypeMismatch expr eq1 eq2,ctx,fst expr) --TODO better error message
+							return ()
+			(Replace eql exp )-> 
+						do
+							eqlTy<-inferType ctx eql
+							expTy<-inferType ctx exp
+							(eq1,eq2)<-getEqType ctx eqlTy (ExpectedEqType eqlTy,ctx,fst expr)
+							_<-replace ctx eq1 eq2 expTy ty
+							--checkType ctx t1 t_right
+							return ()
 			term		->
 						do
 							actualType<-inferType ctx expr
 							compareTypes ctx actualType ty (TypeMismatch expr ty actualType,ctx,fst expr)	
---			)
+			)

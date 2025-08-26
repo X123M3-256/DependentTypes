@@ -70,7 +70,7 @@ operator w=try (do
 
 			
 reservedWords::[String]
-reservedWords=["lambda","exists","forall","type","and","or","fst","snd","left","right","axiom","lemma","define","let","in","s","nat","induction","exhaust","case","with","import"]
+reservedWords=["lambda","exists","forall","type","and","or","fst","snd","left","right","axiom","lemma","define","let","in","s","nat","induction","exhaust","case","with","import","refl","replace"]
 	
 isUniverseParser::(Parsec Void String ()) --Kinda hacky to repeat the parser here
 isUniverseParser=do
@@ -136,6 +136,12 @@ parseBinder str c=annotate (do
 				(str,t1,t2)<-parseAbstraction
 				return (c str t1 t2))
 
+parseRefl::Parser AnnExpr
+parseRefl=annotate (do
+			reserved "refl"
+			return Refl)
+
+
 parseNat::Parser AnnExpr
 parseNat=annotate (do
 			reserved "nat"
@@ -159,6 +165,15 @@ parseInduction=annotate (do
 				step<-parseTerm
 				num<-parseTerm
 				return (Induct hyp base step num))
+
+parseReplace::Parser AnnExpr
+parseReplace=annotate (do
+				reserved "replace"
+				eq<-parseExpr
+				reserved "in"
+				expr<-parseExpr
+				return (Replace eq expr))
+
 
 parseLet::Parser AnnExpr
 parseLet=annotate (do
@@ -263,7 +278,7 @@ operatorTable=[
 				[InfixL parseApplication],
 				[InfixL (parseBinaryOperator (operator "*") "*" Nothing)],
 				[InfixL (parseBinaryOperator (operator "+") "+" Nothing)],
-				[InfixN (parseBinaryOperator (operator "=") "=" Nothing)],
+				[InfixN (parseBinaryOperator (operator "=") "=" (Just Eq))],
 				[InfixN (parseBinaryOperator (operator ">") ">" Nothing)],
 				[InfixN (parseBinaryOperator (operator "<") "<" Nothing)],
 				[InfixN (parseBinaryOperator (operator ">=") ">=" Nothing)],
@@ -276,7 +291,7 @@ operatorTable=[
 			]
 
 parseTerm::Parser AnnExpr
-parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>parseNat<|>parseNumber<|>parseInduction<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression")<|>(parseExhaust<?> "case expression")
+parseTerm=parseUniverse<|>parseVariable<|>try(parseParenthesis)<|>parsePair<|>parseNat<|>parseNumber<|>parseInduction<|>parseRefl<|>parseReplace<|>(parseLet<?>"let binding")<|>((parseBinder "exists" Sigma)<?>"sigma type")<|>((parseBinder "forall" Pi)<?>"pi type")<|>((parseBinder "lambda" Lambda)<?>"lambda expression")<|>(parseExhaust<?> "case expression")
 
 parseExpr=(makeExprParser parseTerm operatorTable)<?>"expression"
 

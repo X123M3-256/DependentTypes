@@ -96,7 +96,7 @@ showLoaded (path:paths) = do
 							
 main::IO()
 main=do
-		result<-processFiles "" [] [((SourcePos 0 0,SourcePos 0 0),"test/testvec.txt")] prelude
+		result<-processFiles "" [] [((SourcePos 0 0,SourcePos 0 0),"test/testbool.txt")] prelude
 		case result of
 			Left (fname,err) -> do
 					putStrLn(printError fname err)

@@ -61,7 +61,7 @@ bracketOp left prec assoc ctx expr=let favouredSide=
 				in let str=printExpr ctx expr in
 						case snd expr of
 							FVar s		-> str
-							BVar _		-> error "Bound variable encountered"
+							BVar n		-> error "Bound variable encountered"
 							Universe _	-> str
 							Pi _ _ _	-> bracket str
 							Lambda _ _ _	-> bracket str
@@ -94,6 +94,9 @@ bracketOp left prec assoc ctx expr=let favouredSide=
 							DisjL _		-> str
 							DisjR _		-> str
 							Exhaust _ _ _	-> bracket str
+							Eq _ _		-> bracket str
+							Refl  		-> str
+							Replace _ _	-> str
 							Nat 		-> str
 							Z		-> str
 							S _ 		-> str
@@ -106,7 +109,7 @@ bracketApp left ctx expr=
 			let str=printExpr ctx expr in
 				case snd expr of
 					FVar s		-> str
-					BVar _		-> "blah" --error "Bound variable encountered"
+					BVar _		-> error "Bound variable encountered"
 					Universe _	-> str
 					Pi _ _ _	-> bracket str
 					Lambda _ _ _	-> bracket str
@@ -125,6 +128,9 @@ bracketApp left ctx expr=
 					DisjL _		-> str
 					DisjR _		-> str
 					Exhaust _ _ _	-> bracket str
+					Eq _ _		-> bracket str
+					Refl  		-> str
+					Replace _ _	-> str
 					Nat 		-> str
 					Z		-> str
 					S _ 		-> str
@@ -149,11 +155,14 @@ bracketUnary ctx expr=
 					DisjL _		-> str
 					DisjR _		-> str
 					Exhaust _ _ _	-> bracket str
+					Eq _ _		-> bracket str
+					Refl  		-> str
+					Replace	_ _	-> str
 					Nat 		-> str
 					Z		-> str
 					S _ 		-> str
 					Induct _ _ _ _	-> str
-					Let _ _ _ _	-> bracket str
+					Let _ _ _ _	-> str
 
 bracketInduct::Context a->Expr a->String
 bracketInduct ctx expr=
@@ -173,6 +182,9 @@ bracketInduct ctx expr=
 					DisjL _		-> bracket str
 					DisjR _		-> bracket str
 					Exhaust _ _ _	-> bracket str
+					Eq _ _		-> bracket str
+					Refl  		-> str
+					Replace	_ _	-> bracket str
 					Nat 		-> str
 					Z		-> str
 					S _ 		-> bracket str
@@ -192,7 +204,7 @@ printExpr::(Context a)->(Expr a)->String
 printExpr ctx (ann,expr)=
 					case expr of
 						FVar s		-> s
-						BVar ind	-> "blah2" --error ("Attempted to print bound variable")
+						BVar ind	-> error ("Attempted to print bound variable")
 						Universe i	-> if i==0 then "type" else "type"++(show i)
 						Pi str t1 t2	-> let name=freshName ctx str in
 									"forall "++name++":"++(printExpr ctx t1)++"."++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))
@@ -220,6 +232,9 @@ printExpr ctx (ann,expr)=
 						Exhaust t0 (_,(Lambda str t1 t2)) (_,(Lambda str2 t3 t4)) -> let name=freshName ctx str in
 													 "exhaust "++(printExpr ctx t0)++" with "++name++" case "++(printExpr ctx t1)++"->"++(printExpr (Map.insert name (t1,Nothing) ctx) (open t2 name))++" case "++(printExpr ctx t1)++"->"++(printExpr (Map.insert name (t3,Nothing) ctx) (open t4 name))
 						Exhaust t0 t1 t2-> error ("Exhaust encountered whose arguments aren't lambdas (I don't think this should happen")
+						Eq t1 t2	-> (bracketOp True 7 AssocNone ctx t1)++"="++(bracketOp False 7 AssocNone ctx t2)
+						Refl 		-> "refl"
+						Replace t1 t2	-> "replace "++(printExpr ctx t1)++" in "++(bracketUnary ctx t2)
 						Induct t1 t2 t3 t4-> "induction "++(bracketInduct ctx t1)++" "++(bracketInduct ctx t2)++" "++(bracketInduct ctx t3)++" "++(bracketInduct ctx t4)
 
 						Let str t1 t2 t3-> let name=freshName ctx str in
