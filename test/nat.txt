@@ -1,4 +1,4 @@
-import prelude.txt
+import logic.txt
 
 ##Properties of successor function
 
@@ -75,8 +75,7 @@ lemma add_commutative:forall x:nat.forall y:nat.x+y=y+x:=
 			lambda ass:hyp(z).
 				let t1:s(z)+x=s(z+x):=add_factor_succ_left z x in
 				let t2:s(x+z)=s(z+x):=map_uniqueness nat (lambda z:nat.s(z)) (x+z) (z+x) ass in
-				let t3:s(x+z)=s(z)+x:= replace (eq_sym nat (s z + x) (s(z+x)) t1) in t2 in #TODO type annotation should not be required
-					t3
+					replace (eq_sym nat (s z + x) (s(z+x)) t1) in t2
 		in induction hyp base step y
 
 
@@ -230,13 +229,9 @@ lemma mul_associative:forall x:nat.forall y:nat.forall z:nat.x*y*z=x*(y*z):=
 			lambda ass:hyp w.
 				let t1:(s(w)*y)*z=(w*y+y)*z:=refl in
 				let t2:(s(w)*y)*z=w*y*z+y*z:=replace (mul_distributive_right (w*y) y z) in t1 in
-#				let t3:(s(w)*y)*z=s(w)*(y*z):=replace ass in t2 in #TODO this version should work
-				let t3:(s(w)*y)*z=w*(y*z)+y*z:=replace ass in t2 in
+				let t3:(s(w)*y)*z=s(w)*(y*z):=replace ass in t2 in
 					t3 in
 		induction hyp base step x
-
-
-
 
 ##Define order operators
 
@@ -306,8 +301,7 @@ lemma lte_and_gte_implies_eq:forall x:nat.forall y:nat.(x<=y and x>=y)=>x=y:=
 		let p3:y+(j+k)=y:=replace (add_associative y j k) in p2b in
 		let p4:j<=0:=(k,zero_only_additive_identity y (j+k) p3) in
 		let p5:j=0:=less_than_or_equal_to_zero_implies_zero j p4 in
-
-		let p6:x=y+0:=replace p5 in p2 in p6 #TODO type annotation should not be necessary
+			replace p5 in p2 
 
 lemma between_two_equals:forall x:nat.forall y:nat.forall z:nat.((y>=x and y<=z) and (x=z))=>x=y:=
 	lambda x:nat.
@@ -417,35 +411,66 @@ lemma gt_addition:forall x:nat.forall y:nat.forall z:nat.x>y=>x+z>y+z:=
 		lt_addition y x z y_lt_x
 
 
-
-##(x<=y)=>empty
-#
-#
-##x<=y=>not x>y
-#
-##x<=y implies
-##x+k=y
-#
-#
-##x<=y   x>=y
-#
-##x>y implies
-##y+j=x
-##not x=y
-#
-##y+j+k=y
-#
-##j+k=0
-#
-#
-#		
-#
-#
-#
-#
+lemma lte_equal_or_less_than:forall x:nat.forall y:nat.x<=y=>(x=y or x<y):=
+	lambda x:nat.
+	lambda y:nat.
+		lambda ass1:x<=y.
+			let k:nat:=fst ass1 in
+			let p1:x+k=y:=snd ass1 in
+			let eq_or_not_eq:x=y or not (x=y):=excluded_middle (x=y) in #Can we prove this without excluded middle?
+				exhaust eq_or_not_eq with p2
+					case x=y -> left p2
+					case not(x=y) -> right (ass1,p2)
 
 
+lemma gte_equal_or_greater_than:forall x:nat.forall y:nat.x>=y=>(x=y or x>y):=
+	lambda x:nat.
+	lambda y:nat.
+		lambda ass1:y<=x.
+			let p1:y=x or y<x:=lte_equal_or_less_than y x ass1 in
+				exhaust p1 with p2
+					case y=x -> left (eq_sym nat y x p2)
+					case y<x -> right p2
 
+
+lemma lt_to_lte:forall x:nat.forall y:nat.x<y=>x+1<=y:=
+	lambda x:nat.
+	lambda y:nat.
+		lambda ass1:x<y.
+			let p1:x<=y:=fst ass1 in
+			let p2:not(x=y):=snd ass1 in
+			let k:nat:=fst p1 in
+			let p3:x+k=y:=snd p1 in
+			let hyp:nat=>type:=lambda n:nat.x+n=y=>x+1<=y in
+			let base:hyp 0:=lambda p:x=y.void (x+1<=y) (p2 p) in
+			let step:forall n:nat.hyp n=>hyp(s(n)):=
+				lambda n:nat.
+					lambda p:x+n=y=>x+1<=y.				
+					lambda q:x+(n+1)=y.
+						let q2:x+(1+n)=y:=replace add_commutative n 1 in q in
+						let q3:x+1+n=y:=replace add_associative_right x 1 n in q2 in
+						(n,q3) in
+				(induction hyp base step k) p3
+
+
+lemma gt_to_gte:forall x:nat.forall y:nat.x>y=>x>=y+1:=
+	lambda x:nat.
+	lambda y:nat.
+		lambda ass1:y<x.
+			lt_to_lte y x ass1
+
+
+
+lemma gte_zero:forall x:nat.x>=0:=
+	lambda x:nat.
+		let p1:x=x:=refl in
+		let p2:0+x=x:=replace eq_sym nat (0+x) x (add_ident x) in p1 in
+		(x,p2)
+
+lemma lte_refl:forall x:nat.x<=x:=
+	lambda x:nat.
+		(0,refl)
+		
 
 lemma lte_negation:forall x:nat.forall y:nat.x<=y=>not(x>y):=
 	lambda x:nat.
