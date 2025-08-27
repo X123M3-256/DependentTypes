@@ -234,7 +234,15 @@ normalize ctx (ann,expr)=
 												normalize ctx (substitute (open body name) t2 name)
 							nt1 			-> (ann,App nt1 (normalize ctx t2)) --TODO look into whether this case is needed
 			(Sigma str t1 t2)->let (nstr,nt1,nt2)=normalizeAbstraction ctx (str,t1,t2) in (ann,Sigma nstr nt1 nt2)
-			(Pair t1 t2)	->(ann,Pair (normalize ctx t1) (normalize ctx t2))
+			(Pair t1 t2)	->      --TODO are we sure this is valid? The reduced form might have a different type than the combination
+						let a=(normalize ctx t1) in
+						let b=(normalize ctx t2) in
+							case a of 
+								(_,ProjL u1)	->
+									case b of 
+										(ann2,ProjR u2) -> if snd u1==snd u2 then u1 else (ann,Pair a b)
+										_		-> (ann,Pair a b)
+								_		-> (ann,Pair a b)
 			(ProjL t1)	->
 						case normalize ctx t1 of
 							(_,Pair left right)	-> normalize ctx left
@@ -254,7 +262,7 @@ normalize ctx (ann,expr)=
 							nt1 		-> (ann,Exhaust (normalize ctx t1) (normalize ctx t2) (normalize ctx t3))
 			(Eq t1 t2)	->(ann,Eq (normalize ctx t1) (normalize ctx t2))
 			Refl		->	(ann,Refl)
-			Replace t1 t2	->	t2 --TODO is this correct? I think maybe the type of t2 needs to be changed in context but that only matters if we checked types while normalizing
+			Replace t1 t2	->	(normalize ctx t2) --TODO is this correct? I think maybe the type of t2 needs to be changed in context but that only matters if we checked types while normalizing
 			Nat 		->	(ann,Nat)
 			Z		->	(ann,Z)
 			(S t1)		->	(ann,S (normalize ctx t1))
@@ -333,6 +341,17 @@ simplify ctx (ann,expr)=
 						case t1 of
 							(_,Pair left right)	-> simplify ctx right
 							nt1 			-> (ann,ProjR nt1) --TODO look into whether this case is needed
+			(Sum t1 t2)	->(ann,Sum (simplify ctx t1) (simplify ctx t2))
+			(DisjL t1)	->	(ann,DisjL (simplify ctx t1))
+			(DisjR t1)	->	(ann,DisjR (simplify ctx t1))
+			(Exhaust t1 t2 t3)->	
+						case simplify ctx t1 of
+							(_,DisjL expr)	-> simplify ctx (ann,App t2 expr)--TODO check types
+							(_,DisjR expr)	-> simplify ctx (ann,App t3 expr)
+							nt1 		-> (ann,Exhaust (simplify ctx t1) (simplify ctx t2) (simplify ctx t3))
+			(Eq t1 t2)	->(ann,Eq (simplify ctx t1) (simplify ctx t2))
+			Refl		->	(ann,Refl)
+			Replace t1 t2	->	(simplify ctx t2) --TODO is this correct? I think maybe the type of t2 needs to be changed in context but that only matters if we checked types while normalizing
 			(S t1)		->	(ann,S (simplify ctx t1))
 			(Induct t1 t2 t3 t4)->
 						case simplify ctx t4 of
