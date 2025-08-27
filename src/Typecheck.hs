@@ -5,6 +5,7 @@ import AbstractSyntax
 import Parser
 import PrettyPrinter
 import Error
+import Data.Bits
 import Debug.Trace
 
 
@@ -55,147 +56,108 @@ getUniverseType ctx ty err=case snd (simplify ctx (normalizePartial ctx ty)) of
 
 
 
+recurseExpr::Context a->(Context a->(b,(Expr a))->(b,Bool,(Expr a)))->(b,Expr a)->(b,Expr a)
+recurseExpr ctx f expin=
+	let (state,cont,(ann,exp))=f ctx expin in
+		if cont then
+			(case exp of
+				(Pi str a1 b1)->
+						let str2=(freshName ctx str) in	
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr (Map.insert str2 (a1,Nothing) ctx) f (newstate1,(open b1 str2)) in 
+							(newstate2,(ann,Pi str newexp1 newexp2))
+				(Lambda str a1 b1)->
+						let str2=(freshName ctx str) in	
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr (Map.insert str2 (a1,Nothing) ctx) f (newstate1,(open b1 str2)) in 
+							(newstate2,(ann,Lambda str newexp1 newexp2))
+				(App a1 b1)->
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr ctx f (newstate1,b1) in 
+							(newstate2,(ann,App newexp1 newexp2))
+				(Sigma str a1 b1)->
+						let str2=(freshName ctx str) in	
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr (Map.insert str2 (a1,Nothing) ctx) f (newstate1,(open b1 str2)) in 
+							(newstate2,(ann,Sigma str newexp1 newexp2))
+				(Pair a1 b1)->
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr ctx f (newstate1,b1) in 
+							(newstate2,(ann,Pair newexp1 newexp2))
+				(ProjL a1) ->  let (newstate,newexp)=recurseExpr ctx f (state,a1) in (newstate,(ann,ProjL (newexp)))
+				(ProjR a1) ->  let (newstate,newexp)=recurseExpr ctx f (state,a1) in (newstate,(ann,ProjR (newexp)))
+				(Sum a1 b1)->
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr ctx f (newstate1,b1) in 
+							(newstate2,(ann,Sum newexp1 newexp2))
+				(DisjL a1) ->  let (newstate,newexp)=recurseExpr ctx f (state,a1) in (newstate,(ann,DisjL (newexp)))
+				(DisjR a1) ->  let (newstate,newexp)=recurseExpr ctx f (state,a1) in (newstate,(ann,DisjR (newexp)))
+				(Exhaust a1 b1 c1)->
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr ctx f (newstate1,b1) in 
+						let (newstate3,newexp3)=recurseExpr ctx f (newstate2,c1) in 
+							(newstate2,(ann,Exhaust newexp1 newexp2 newexp3))
+				(Eq a1 b1)->
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr ctx f (newstate1,b1) in 
+							(newstate2,(ann,Eq newexp1 newexp2))
+				(Replace a1 b1)->
+						let (newstate1,newexp1)=recurseExpr ctx f (state,a1) in 
+						let (newstate2,newexp2)=recurseExpr ctx f (newstate1,b1) in 
+							(newstate2,(ann,Replace newexp1 newexp2))
+				(S a1) ->  let (newstate,newexp)=recurseExpr ctx f (state,a1) in (newstate,(ann,S (newexp)))
+				t1 -> (state,(ann,t1)))
+		else (state,(ann,exp))
 
-factorRec::(Context a)->String->(Expr a)->(Expr a)->(Expr a)
-factorRec ctx name t1 (ann,expr)=
-		if snd(normalize ctx t1) == snd(normalize ctx (ann,expr)) then (fst t1,FVar name) else
-		(ann,case expr of
-			Pi str a b ->let str2=(freshName ctx str) in
-					Pi str (factorRec ctx name t1 a) (factorRec (Map.insert str2 (a,Nothing) ctx) name t1  (open b name))
-			Lambda str a b ->let str2=(freshName ctx str) in
-					Lambda str (factorRec ctx name t1 a) (factorRec (Map.insert str2 (a,Nothing) ctx) name t1  (open b name))
-			(App a1 b1) -> App (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
-			Sigma str a b ->let str2=(freshName ctx str) in
-					Sigma str (factorRec ctx name t1 a) (factorRec (Map.insert str2 (a,Nothing) ctx) name t1  (open b name))
-			(Pair a1 b1) ->  Pair (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
-			(ProjL a1) ->  ProjL (factorRec ctx name t1 a1)
-			(ProjR a1) ->  ProjR (factorRec ctx name t1 a1)
-			(Sum a1 b1) ->  Sum (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
-			(DisjL a1) ->  DisjL (factorRec ctx name t1 a1)
-			(DisjR a1) ->  DisjR (factorRec ctx name t1 a1)
-			(Exhaust a1 b1 c1) -> Exhaust (factorRec ctx name t1 a1) (factorRec ctx name t1 b1) (factorRec ctx name t1 c1)
-			(Eq a1 b1) -> Eq (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
-			(Replace a1 b1) ->  Replace (factorRec ctx name t1 a1) (factorRec ctx name t1 b1)
-			(S a) ->S (factorRec ctx name t1 a)
-			t1 -> t1)
+
+factorRec::String->(Expr a)->(Context a)->(Int,(Expr a))->(Int,Bool,Expr a)
+factorRec name t1 ctx (holes,(ann,exp))=
+		if snd t1 == snd(normalize ctx (ann,exp)) then (holes+1,False,(fst t1,FVar name)) else
+		case exp of
+			(FVar n1)	-> case Map.lookup n1 ctx of
+						Just (_,expanded) -> case expanded of
+							Just def -> let (newholes,newexpr)=recurseExpr ctx (factorRec name (normalize ctx t1)) (holes,def) in (if newholes==holes then (holes,False,(ann,FVar n1)) else (newholes,False,newexpr))
+							Nothing -> (holes,False,(ann,FVar n1))
+						Nothing -> (holes,False,(ann,FVar n1))
+			t1 -> (holes,True,(ann,t1))
+
 
 --Replaces all instances of t1 in expr with a free variable
-factor::(Context a)->(Expr a)->(Expr a)->(String,(Expr a))
+factor::(Context a)->(Expr a)->(Expr a)->(String,Int,(Expr a))
 factor ctx t1 expr=
 		let name=(freshName ctx "?") in
-			(name,factorRec ctx name t1 expr)
+		let (holes,newexp)=recurseExpr ctx (factorRec name (normalize ctx t1)) (0,expr) in
+			(name,holes, newexp)
 
 
-replaceRec::(Context a)->(Expr a)->(Expr a)->(Expr a)->(Expr a)->String->(Expr a)->(Expr a)->Either (Error a) ()
-replaceRec ctx t1 t2 nt1 nt2 name factored targetExpr=
-	let (ann,normalFactored)=factored in
-	let (_,normalExpr)=targetExpr in
-		case (normalFactored,normalExpr) of
-			((BVar i1),_) -> error "Encountered bound variable in replace (this should never happen)"
-			((FVar n1),b) ->if n1==name then
-						(
-						--If we have encountered an instance of t1, check that it can be unified with t1 or t2
-						--Otherwise check that names are the same
-							if snd nt1==snd (normalize ctx (ann,b)) then
-								trace ("Filled hole "++(printExpr ctx t1)) (Right ())
-							else if snd nt2==snd (normalize ctx (ann,b)) then
-								trace ("Filled hole "++(printExpr ctx t2)) (Right ())
-							else
-								Left (ReplaceFailed ("Cannot unify "++n1++" with "++(printExpr ctx (ann,b))),ctx,fst targetExpr)--TODO annotations meaningless	
-	
-						)
-						else if FVar n1==b then 
-							Right ()
-						else
-							Left (ReplaceFailed "FVar",ctx,fst targetExpr)--TODO annotations meaningless	
-							
-			((Universe k1),(Universe k2)) -> if k1==k2 then Right() else Left (ReplaceFailed "Universe",ctx,fst targetExpr)
-			(Pi str1 a1 b1,Pi str2 a2 b2)->
-						let freshStr1=(freshName ctx str1) in
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec (Map.insert str1 (a2,Nothing) ctx) t1 t2 nt1 nt2 name (open b1 freshStr1) (open b2 freshStr1))
-							return ()
-			(Lambda str1 a1 b1,Lambda str2 a2 b2)->
-						let freshStr1=(freshName ctx str1) in
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec (Map.insert str1 (a2,Nothing) ctx) t1 t2 nt1 nt2 name (open b1 freshStr1) (open b2 freshStr1))
-							return ()
+--Replaces free variables in expr with either t1 or t2 depending on bitfield bits
+replaceRec::String->Int->(Expr a)->(Expr a)->(Context a)->(Int,(Expr a))->(Int,Bool,Expr a)
+replaceRec name bits t1 t2 ctx (i,(ann,exp))=
+		case exp of
+			(FVar n1)	-> if n1==name then (i+1,False,if ((bits) .&. (shift 1 i))==0 then t1 else t2) else (i,False,(ann,FVar n1))
+			t1 -> (i,True,(ann,t1))
 
 
-			(App a1 b1,App a2 b2) -> do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
-							return ()
-			(Sigma str1 a1 b1,Sigma str2 a2 b2)->
-						let freshStr1=(freshName ctx str1) in
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec (Map.insert str1 (a2,Nothing) ctx) t1 t2 nt1 nt2 name (open b1 freshStr1) (open b2 freshStr1))
-							return ()
-			((Pair a1 b1),(Pair a2 b2)) -> do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
-							return ()
-			((ProjL a),(ProjL b)) ->
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
-							return ()
-			((ProjR a),(ProjL b)) ->
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
-							return ()
-			((Sum a1 b1),(Sum a2 b2)) -> do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
-							return ()
-			((DisjL a),(DisjL b)) ->
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
-							return ()
-			((DisjR a),(DisjR b)) ->
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
-							return ()
-			((Exhaust a1 b1 c1),(Exhaust a2 b2 c2)) ->
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name c1 c2)
-							return ()
+--Tries replacing free variable name with each of t1 and t2 in all possible combinations sequentially and checks if any result matches targetExpr
 
-			((Eq a1 b1),(Eq a2 b2)) -> do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
-							return ()
-			(Refl,Refl) -> Right()
-			((Replace a1 b1),(Replace a2 b2)) -> do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
-							return ()
-			(Nat,Nat)->Right ()
-			(Z,Z)->Right ()
-			((S a),(S b)) ->
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a b)
-							return ()
-			((Induct a1 b1 c1 d1),(Induct a2 b2 c2 d2))->
-						do
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name a1 a2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name b1 b2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name c1 c2)
-							_<-(replaceRec ctx t1 t2 nt1 nt2 name d1 d2)
-							return ()
---			(Let str1 t1 u1 v1) == (Let str2 t2 u2 v2)=((snd t1)==(snd t2)) && ((snd u1)==(snd u2)) && ((snd v1)==(snd v2))
-			(a,b) -> Left (ReplaceFailed ("- can't unify "++(printExpr ctx (ann,a))++" with "++(printExpr ctx (ann,b))),ctx,ann)
-
+replaceLoop::(Context a)->(Expr a)->(Expr a)->String->Int->(Expr a)->(Expr a)->Either (Error a) ()
+replaceLoop ctx t1 t2 name bits factored targetExpr=
+						let (_,res)=recurseExpr ctx (replaceRec name bits t1 t2) (0,factored) in
+							if snd(normalize ctx res)==snd targetExpr then
+								Right() --Successfully matched
+							else if bits>0 then 
+								replaceLoop ctx t1 t2 name (bits-1) factored targetExpr 
+							else Left (ReplaceFailed ("- can't unify "++(printExpr ctx factored)++" with "++(printExpr ctx targetExpr)),ctx,fst targetExpr)
 
 replace::(Context a)->(Expr a)->(Expr a)->(Expr a)->(Expr a)->Either (Error a) ()
 replace ctx t1 t2 initialExpr targetExpr=
-	trace ("Replacing "++printExpr ctx t1++" with "++printExpr ctx t2++" in "++printExpr ctx (simplify ctx initialExpr)++" target "++printExpr ctx (simplify ctx targetExpr)) (
-	let (name,factored)=factor ctx t1 (simplify ctx initialExpr) in
-		(trace ("Factored "++printExpr ctx factored) (replaceRec ctx t1 t2 (normalize ctx t1) (normalize ctx t2) name factored targetExpr)))
+	--trace ("Replacing "++printExpr ctx t1++" with "++printExpr ctx t2++" in "++printExpr ctx (simplify ctx initialExpr)++" target "++printExpr ctx (simplify ctx targetExpr)) 
+		(
+		let (name,holes,factored)=factor ctx t1 (simplify ctx initialExpr) in
+		let bits=(shift 1 holes)-1 in
+			replaceLoop ctx t1 t2 name bits factored (normalize ctx targetExpr))
+					
+
 							
 									
 inferType::(Context a)->(Expr a)->Either (Error a) (Expr a)
@@ -226,7 +188,7 @@ inferType ctx (ann,expr)=
 						(t_str,t_dom,t_range)<-getFunctionType ctx funTy (ExpectedPiType funTy,ctx,ann)
 						checkType ctx t2 t_dom
 						let name=freshName ctx t_str in
-							return (trace ("App returning "++printExpr ctx (open t_range name)) (substitute (open t_range name) t2 name))
+							return (substitute (open t_range name) t2 name)
 			(Sigma str t1 t2)->
 					let name=(freshName ctx str) in
 						do
@@ -292,7 +254,7 @@ inferType ctx (ann,expr)=
 								
 checkType::(Context a)->(Expr a)->(Expr a)->Either (Error a) ()
 checkType ctx expr ty=
-		trace ("Expr: "++(printExpr ctx expr)++" Expected type: "++(printExpr ctx (simplify ctx ty))) (
+--		trace ("Expr: "++(printExpr ctx expr)++" Expected type: "++(printExpr ctx (simplify ctx ty))) (
 		case snd expr of
 			(BVar _) 	->error("Attempted to check type of bound variable - this should never happen")
 			(FVar name)	->case Map.lookup name ctx of
@@ -378,10 +340,9 @@ checkType ctx expr ty=
 							expTy<-inferType ctx exp
 							(eq1,eq2)<-getEqType ctx eqlTy (ExpectedEqType eqlTy,ctx,fst expr)
 							_<-replace ctx eq1 eq2 expTy ty
-							--checkType ctx t1 t_right
 							return ()
 			term		->
 						do
 							actualType<-inferType ctx expr
 							compareTypes ctx actualType ty (TypeMismatch expr ty actualType,ctx,fst expr)	
-			)
+			--)
